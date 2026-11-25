@@ -49,6 +49,7 @@ trabajo-vc/
 │       ├── TEORIA/        PDFs de teoría (L2–L8)
 │       ├── PRACTICAS/     prácticas hechas por nosotros (notebooks + PDFs exportados de Colab)
 │       ├── CONTENIDO_TEMAx.md, ALL.md, INDICE.md   resúmenes de cada tema
+├── starter_kit/           herramientas oficiales de la Parte 1 (evaluate.py, check_submission.py, visualize.py, example_submission/)
 ├── DUDAS.md               preguntas abiertas y cómo se van resolviendo
 └── README.md              este documento
 ```
@@ -104,7 +105,7 @@ Si hace falta instalar PyTorch para una versión concreta de CUDA, se añade `--
 
 **Normas:** se permite cualquier método (clásico, aprendizaje o mezcla) y se pueden usar modelos preentrenados y librerías públicas, siempre que se citen en el README. Si el método se entrena, hay que incluir el código de entrenamiento y explicar cómo se ejecuta.
 
-**Starter kit:** `evaluate.py`, `check_submission.py`, `visualize.py` y `example_submission/` están en el repositorio de la asignatura `uma_cv_2027`, en la carpeta `Final project/Part 1/`. **Todavía no los tenemos en este repositorio.**
+**Starter kit:** `evaluate.py`, `check_submission.py`, `visualize.py` y `example_submission/` están en el repositorio de la asignatura `uma_cv_2027`, en la carpeta `Final project/Part 1/`. Los tenemos copiados en `starter_kit/`.
 
 ---
 

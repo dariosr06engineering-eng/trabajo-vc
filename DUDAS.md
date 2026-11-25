@@ -20,9 +20,10 @@ Cuando una duda se resuelva, se marca como resuelta, se apunta la respuesta y, s
 - **Consecuencia:** podemos diseñar el método asumiendo una especie por imagen. Como la confirmación no viene por escrito del profesor, primero mediremos en validación si la votación por imagen mejora la AP antes de aplicarla a todas las detecciones.
 
 ### D2. ¿Cuántas imágenes tiene el test? 🔴
-- **Qué sabemos:** hay 20 minutos para todo el test, incluida la carga del modelo, en una RTX 2060 de 6 GB. No sabemos el número de imágenes.
+- **Qué sabemos:** hay 20 minutos para todo el test, incluida la carga del modelo, en una RTX 2060 de 6 GB. El enunciado no da el número de imágenes. El `check_submission.py` del starter kit estima el tiempo suponiendo un test **del mismo tamaño que el train (200 imágenes)**, y avisa si con esa suposición nos pasaríamos de 20 minutos.
 - **Por qué importa:** determina cuánto tiempo podemos gastar por imagen (por ejemplo, si podemos permitirnos inferencia por trozos o refinar con SAM).
-- **Cómo resolverla:** preguntar al profesor. Si no se puede saber, suponer un caso conservador y medir el tiempo por imagen.
+- **Mientras tanto:** usamos como referencia la del kit: 200 imágenes, es decir, unos **6 segundos por imagen** incluida la carga del modelo, y dejamos margen porque nuestra máquina no es la suya.
+- **Cómo resolverla:** confirmar el número con el profesor.
 
 ### D3. ¿Las imágenes del train son de 4 árboles (uno por especie)? 🟢
 - **Qué sabemos:** si unimos las imágenes que comparten algún `fruit_id`, salen exactamente 4 grupos de 50 imágenes, cada uno de una sola especie y sin frutas en común. Los datos no traen un identificador de árbol.
@@ -59,9 +60,10 @@ Cuando una duda se resuelva, se marca como resuelta, se apunta la respuesta y, s
 - **Por qué importa:** entrenar a alta resolución necesita GPU.
 - **Cómo resolverla:** ver qué GPU tenemos cada uno o usar Google Colab.
 
-### D9. ¿Conseguir el starter kit? 🔴
-- **Qué sabemos:** `evaluate.py`, `check_submission.py`, `visualize.py` y `example_submission/` están en el repositorio de la asignatura `uma_cv_2027`, en `Final project/Part 1/`. No los tenemos todavía.
-- **Cómo resolverla:** clonar o actualizar ese repositorio y copiar la carpeta del kit.
+### D9. ¿Conseguir el starter kit? 🟢
+- **Respuesta:** está en `starter_kit/`, copiado de `Final project/Part 1/` del repositorio de la asignatura (https://github.com/jotaraul/uma_cv_2027).
+- **Qué contiene:** `evaluate.py` (métricas oficiales; con `--images-file` puntúa solo las imágenes de validación), `check_submission.py` (simula la ejecución del profesor), `visualize.py` (dibuja anotaciones o predicciones) y `example_submission/` (un detector por umbral de color, solo para enseñar el formato).
+- **Para actualizarlo:** hacer `git pull` en el clon del repositorio de la asignatura y volver a copiar la carpeta.
 
 ### D10. ¿Qué frutas cuentan en la evaluación? ¿Las de más de 20×20 px? 🟢
 - **Respuesta:** **no es 20×20 px, son 20 píxeles de área visible.** El enunciado dice que las frutas con menos de 20 píxeles visibles se anotan con `iscrowd: 1` y la evaluación las ignora (ni suman ni restan).
