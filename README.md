@@ -194,6 +194,17 @@ El orden está pensado para tener **cuanto antes una versión completa que funci
 7. ✅ **Medir la calidad de la conversión**: volver a pintar cada polígono como máscara y calcular su IoU con la máscara original. Hecho con `src/check_conversion.py`: `convert_coco` tal cual daba un IoU medio de 0,766 por un problema de redondeo, así que escribimos nuestra propia conversión, que llega a **0,928** (detalle en D6).
 
 ### Fase 3. Primera versión completa
+
+> **Estado:** el código está escrito (`src/train.py`, `src/detector.py` y `main.py`), pero todavía no hemos conseguido entrenar: a 1280 px el entrenamiento no cabe en la memoria de la GPU. Las pruebas hechas, la causa y lo que hay que probar están en D12 ([DUDAS.md](DUDAS.md)).
+>
+> Comandos (desde la raíz del repositorio):
+> ```
+> .venv\Scripts\python.exe team_G17\src\train.py --data datasets\fruits_yolo\data.yaml --name <nombre> --model yolo11s-seg.pt --batch 2 --epochs 1
+> .venv\Scripts\python.exe team_G17\main.py detect --input data\fruits_part1\train --output predictions.json --device cuda
+> .venv\Scripts\python.exe starter_kit\evaluate.py --gt data\fruits_part1\train\annotations.json --pred predictions.json --images-file datasets\fruits_yolo\val_ids.txt
+> ```
+> `main.py` carga el modelo de `team_G17/weights/fruits.pt`: hay que copiarlo ahí desde `runs/<nombre>/weights/best.pt` (o entrenar con `--save-to team_G17\weights\fruits.pt`).
+
 8. Entrenar YOLO-seg con fine-tuning a `imgsz=1280` en la RTX 3060. **Ojo con dos opciones de Ultralytics** que por defecto perjudican a las frutas pequeñas: al entrenar, las máscaras se reducen a 1/4 de resolución (`mask_ratio=4`), y al predecir se devuelven máscaras de baja resolución reescaladas (`retina_masks=False`). Hay que probar `mask_ratio` más bajo y `retina_masks=True`.
 9. Escribir `main.py detect`: inferencia → máscaras → RLE → JSON en formato COCO.
 10. Puntuar la validación con `evaluate.py` y anotar el resultado en la sección 8.

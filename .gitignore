@@ -12,3 +12,7 @@ datasets/
 runs/
 vis/
 predictions*.json
+
+# Pesos preentrenados que descarga Ultralytics en la raíz (los nuestros van en team_G17/weights/)
+/*.pt
+*.log

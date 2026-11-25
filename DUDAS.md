@@ -92,3 +92,23 @@ Cuando una duda se resuelva, se marca como resuelta, se apunta la respuesta y, s
 ### D11. ¿Cómo se llama el equipo? 🟢
 - **Por qué importa:** la carpeta y el zip de la entrega se llaman `team_<nombre>/` y `team_<nombre>.zip`.
 - **Respuesta:** **G17**. La carpeta de entrega es `team_G17/` y el zip, `team_G17.zip`.
+
+### D12. ¿Con qué configuración cabe el entrenamiento en la GPU? 🔴
+- **Qué ha pasado:** con `imgsz=1280`, ninguna prueba ha llegado a entrenar una época en la RTX 3060 (12 GB, de los que otras aplicaciones ya usan ~1,2 GB):
+
+  | Modelo | batch | mosaic | Resultado |
+  |---|---|---|---|
+  | `yolo26s-seg` | 4 | sí | sin memoria |
+  | `yolo26s-seg` | 2 | sí | sin memoria |
+  | `yolo26s-seg` | 2 | no | sin memoria (pide ~1 GB de golpe) |
+  | `yolo11s-seg` | 4 | sí | sin memoria |
+
+- **Por qué:** tenemos muchísimas frutas por imagen (unas 80 de media contando los fragmentos `iscrowd`, y más de 300 con mosaic, que junta 4 imágenes en una).
+  - En **YOLO26-seg**, el paso que asigna qué predicción corresponde a cada fruta (`SegTaskAlignedAssigner`, en `ultralytics/utils/tal.py`) **calcula una máscara para muchas posiciones candidatas de cada fruta** (hasta 30 por fruta) a 320×320. Con cientos de frutas son miles de máscaras a la vez: más de 1 GB solo en ese paso. Lo hemos visto en el error.
+  - **YOLO11-seg** usa el asignador normal, que solo compara cajas, así que debería gastar mucho menos. Con `batch=4` y mosaic tampoco cupo, pero `batch=2` no llegó a probarse limpio (ver el aviso de abajo).
+- **Aviso importante:** cuando se queda sin memoria, Ultralytics reintenta solo con un batch más pequeño, pero en Windows CUDA queda en mal estado y el reintento falla con `CUDA error: unknown error` o `resource already mapped`. **Hay que lanzar cada prueba directamente con el batch que se quiere probar**, no fiarse del reintento automático.
+- **Qué probar, en este orden** (1 época cada una; si cabe, se lanza el entrenamiento completo con esa configuración):
+  1. `yolo11s-seg`, `batch=2`, mosaic activado.
+  2. `yolo11s-seg`, `batch=2`, sin mosaic (`--mosaic 0`).
+  3. Si nada cabe: dejar fuera los fragmentos `iscrowd` (rehacer el dataset con `prepare_dataset.py --no-crowd --overwrite`), que son el 30 % de los objetos, y repetir.
+- **Antes de entrenar:** cerrar lo que use la gráfica (fondo animado de Lively Wallpaper, juegos, Overwolf…).
