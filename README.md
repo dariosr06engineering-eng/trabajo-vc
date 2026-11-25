@@ -50,7 +50,7 @@ trabajo-vc/
 │       ├── PRACTICAS/     prácticas hechas por nosotros (notebooks + PDFs exportados de Colab)
 │       ├── CONTENIDO_TEMAx.md, ALL.md, INDICE.md   resúmenes de cada tema
 ├── starter_kit/           herramientas oficiales de la Parte 1 (evaluate.py, check_submission.py, visualize.py, example_submission/)
-├── team_G17/             (por crear) la carpeta que se entrega: ver abajo
+├── team_G17/             la carpeta que se entrega: ver abajo
 ├── DUDAS.md               preguntas abiertas y cómo se van resolviendo
 └── README.md              este documento
 ```
@@ -70,6 +70,8 @@ team_G17/
 ├── requirements.txt   dependencias con versión exacta
 ├── main.py            punto de entrada: python main.py detect ...
 ├── src/               el resto del código: preparar el dataset, entrenar, inferir
+│   ├── prepare_dataset.py    separa train/val y convierte las anotaciones a formato YOLO-seg
+│   └── check_conversion.py   mide la calidad de esa conversión
 └── weights/           el modelo entrenado (.pt)
 ```
 
@@ -187,12 +189,12 @@ El orden está pensado para tener **cuanto antes una versión completa que funci
 4. ✅ Ejecutar la `example_submission/` del starter kit sobre el train y puntuarla con `evaluate.py`. No es nuestro método: solo sirve para comprobar que el entorno y la evaluación funcionan, y para tener una nota de referencia mínima. Hecho: AP = 0,0065 (ver sección 8). Para ejecutarla hubo que instalar `scipy` en el entorno.
 
 ### Fase 2. Preparar los datos
-5. **Separar train y validación** (D7): 10 imágenes de cada árbol para validación (40 en total) y 160 para entrenar. Los árboles se identifican agrupando las imágenes que comparten `fruit_id`. Los ids de validación se guardan en un fichero (`val_ids.txt`) para usarlo con `evaluate.py --images-file`.
-6. **Convertir las anotaciones a formato YOLO-seg** (D6), usando el `convert_coco` de Ultralytics. Incluimos también los fragmentos `iscrowd` como frutas (ver la decisión en la sección 7).
-7. **Medir la calidad de la conversión**: volver a pintar cada polígono como máscara y calcular su IoU con la máscara original. Si se pierde demasiado (frutas partidas, agujeros), escribimos nuestra propia conversión.
+5. ✅ **Separar train y validación** (D7): 10 imágenes de cada árbol para validación (40 en total) y 160 para entrenar. Los árboles se identifican agrupando las imágenes que comparten `fruit_id`. Los ids de validación se guardan en un fichero (`val_ids.txt`) para usarlo con `evaluate.py --images-file`. Hecho con `src/prepare_dataset.py` (semilla 0): 10 imágenes de validación por especie y ninguna repetida.
+6. ✅ **Convertir las anotaciones a formato YOLO-seg** (D6). Incluimos también los fragmentos `iscrowd` como frutas (ver la decisión en la sección 7). Hecho: las 16.002 anotaciones (12.716 en train y 3.286 en validación).
+7. ✅ **Medir la calidad de la conversión**: volver a pintar cada polígono como máscara y calcular su IoU con la máscara original. Hecho con `src/check_conversion.py`: `convert_coco` tal cual daba un IoU medio de 0,766 por un problema de redondeo, así que escribimos nuestra propia conversión, que llega a **0,928** (detalle en D6).
 
 ### Fase 3. Primera versión completa
-8. Entrenar YOLO-seg con fine-tuning a `imgsz=1280` en la RTX 3060.
+8. Entrenar YOLO-seg con fine-tuning a `imgsz=1280` en la RTX 3060. **Ojo con dos opciones de Ultralytics** que por defecto perjudican a las frutas pequeñas: al entrenar, las máscaras se reducen a 1/4 de resolución (`mask_ratio=4`), y al predecir se devuelven máscaras de baja resolución reescaladas (`retina_masks=False`). Hay que probar `mask_ratio` más bajo y `retina_masks=True`.
 9. Escribir `main.py detect`: inferencia → máscaras → RLE → JSON en formato COCO.
 10. Puntuar la validación con `evaluate.py` y anotar el resultado en la sección 8.
 11. Medir el tiempo por imagen y la memoria de GPU, y pasar `check_submission.py`.
@@ -218,8 +220,8 @@ Cada decisión indica de qué duda sale (ver [DUDAS.md](DUDAS.md)) y por qué la
 |---|---|---|
 | **Modelo: YOLO de segmentación** (Ultralytics, variantes `-seg`) con fine-tuning desde pesos preentrenados | Es el mismo flujo que la práctica 7.5, pero devuelve una máscara por fruta. Plan B: Mask R-CNN (torchvision). | D4 |
 | **Resolución: imagen a tamaño real** (`imgsz=1280`) | Con 640 px la fruta mediana (13×13) se quedaría en unos 6×6. Partir la imagen en trozos solo si esto no basta. | D5 |
-| **Conversión de máscaras: `convert_coco` de Ultralytics**, pendiente de medir su calidad | Admite RLE y une los trozos de cada fruta en un polígono. Pierde los agujeros, así que mediremos el IoU de la conversión antes de darla por buena. | D6 |
-| **Los fragmentos `iscrowd` se incluyen en el entrenamiento como frutas** | La evaluación ignora las detecciones sobre ellos (ni suman ni restan), así que detectarlos no penaliza. En cambio, si los dejamos fuera, sus píxeles cuentan como fondo y el modelo aprende que una fruta muy pequeña "no es fruta", justo lo contrario de lo que queremos para las de 20-30 px, que sí puntúan. Como `convert_coco` se los salta, hay que ponerles `iscrowd: 0` en una copia del JSON antes de convertir. | D6 |
+| **Conversión de máscaras: propia** (`src/prepare_dataset.py`), basada en la de Ultralytics | `convert_coco` truncaba las coordenadas y desplazaba las máscaras un píxel (IoU medio 0,766). La nuestra hace lo mismo, pero con las coordenadas desplazadas medio píxel, y llega a un IoU medio de 0,928 (0,995 en frutas de un trozo). | D6 |
+| **Los fragmentos `iscrowd` se incluyen en el entrenamiento como frutas** | La evaluación ignora las detecciones sobre ellos (ni suman ni restan), así que detectarlos no penaliza. En cambio, si los dejamos fuera, sus píxeles cuentan como fondo y el modelo aprende que una fruta muy pequeña "no es fruta", justo lo contrario de lo que queremos para las de 20-30 px, que sí puntúan. Nuestra conversión los incluye (`convert_coco` se los saltaba). | D6 |
 | **Validación: 80/20 por árbol** (10 imágenes de cada árbol) | Las cuatro especies igual de representadas. No se puede separar por árboles (solo hay uno por especie), así que la validación saldrá optimista. | D3, D7 |
 | **Especie: una por imagen**, aplicada por votación si mejora la AP en validación | Cada árbol es de una sola especie. | D1 |
 | **Entrenamiento en local**, RTX 3060 de 12 GB (plan B: Google Colab) | Sin límites de tiempo ni desconexiones. La GPU de evaluación tiene 6 GB, así que hay que vigilar la memoria de la inferencia. | D8 |
@@ -261,6 +263,5 @@ El enunciado obliga a citar cada modelo preentrenado, dataset externo o librerí
 | Ultralytics | Entrenar e inferir con YOLO de segmentación | https://github.com/ultralytics/ultralytics |
 | Pesos preentrenados de YOLO-seg (COCO) | Punto de partida del fine-tuning. El tamaño concreto del modelo está por decidir | https://docs.ultralytics.com/tasks/segment/ |
 | pycocotools | Leer las anotaciones y codificar las máscaras en RLE | https://github.com/cocodataset/cocoapi |
-| faster-coco-eval | Lo necesita `convert_coco` para leer máscaras RLE | https://github.com/MiXaiLL76/faster_coco_eval |
 
 No usamos datasets externos.

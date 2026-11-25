@@ -46,31 +46,28 @@ Cuando una duda se resuelva, se marca como resuelta, se apunta la respuesta y, s
 - **Si no basta:** partir la imagen en trozos (*tiling*). Los trozos tienen que solaparse para no cortar frutas, y al juntarlos hay que eliminar las detecciones duplicadas. Es más complejo, así que solo lo haremos si la opción sencilla se queda corta.
 - **A vigilar:** la memoria de GPU (la de evaluación tiene 6 GB) y el tiempo (ver D2).
 
-### D6. ¿Cómo convertimos las máscaras RLE al formato de YOLO? 🔴
+### D6. ¿Cómo convertimos las máscaras RLE al formato de YOLO? 🟢
 - **El problema:** las anotaciones están en RLE (COCO), y YOLO-seg entrena con un `.txt` por imagen con una línea por objeto: `<clase> x1 y1 x2 y2 ...`, un **único polígono** por objeto, con coordenadas entre 0 y 1 y al menos 3 puntos.
-- **Qué hemos visto en nuestras máscaras** (las 11.076 frutas evaluadas):
-  | Trozos por fruta | Frutas | % |
-  |---|---|---|
-  | 1 | 3.677 | 33,2 % |
-  | 2 | 2.367 | 21,4 % |
-  | 3 | 1.748 | 15,8 % |
-  | 4 | 1.261 | 11,4 % |
-  | 5 o más | 2.023 | 18,3 % |
+- **Cómo son nuestras máscaras** (las 11.076 frutas evaluadas): el **66,8 %** están partidas en varios trozos por hojas o ramas (el 18,3 %, en 5 o más) y el **19 %** tienen algún agujero.
+- **Qué ofrece Ultralytics:** `convert_coco` admite RLE, saca los contornos exteriores y, si la fruta tiene varios trozos, los une en un solo polígono con `merge_multi_segment` (conecta cada trozo con el siguiente por sus puntos más cercanos). Se salta las anotaciones con `iscrowd: 1` y no separa train/val, no copia las imágenes ni crea el `.yaml`.
+- **Qué hemos medido** con `team_G17/src/check_conversion.py`: cada polígono se vuelve a pintar como máscara con `polygon2mask` (la misma función que usa Ultralytics al entrenar) y se compara con la original.
 
-  **El 66,8 % de las frutas están partidas en varios trozos** (por hojas o ramas), y el **19 %** tienen algún agujero. No es un caso raro: es lo normal en este dataset.
-- **Qué ofrece Ultralytics** (`ultralytics/data/converter.py`, leído del código fuente):
-  - `convert_coco(labels_dir, save_dir, use_segments=True, cls91to80=False)` convierte un JSON de COCO a etiquetas YOLO:
-    - **Sí admite RLE**: decodifica la máscara y saca sus contornos exteriores con `cv2.findContours` (necesita el paquete `faster-coco-eval`).
-    - **Ignora las anotaciones con `iscrowd: 1`**.
-    - Si una fruta tiene **varios trozos**, los une en un solo polígono con `merge_multi_segment`, que conecta cada trozo con el siguiente por sus dos puntos más cercanos, mediante una "línea fina" de ida y vuelta.
-    - **Los agujeros se pierden**: solo usa contornos exteriores, así que la máscara queda rellena.
-    - Hay que pasar `cls91to80=False`. Si no, intenta traducir los ids de las 91 categorías de COCO original a sus 80 clases.
-    - **No hace la separación train/val, no copia las imágenes y no crea el `.yaml`**. Eso lo tenemos que hacer nosotros.
-  - `convert_segment_masks_to_yolo_seg` no nos sirve: espera máscaras semánticas (una imagen por foto, con la clase como valor de píxel), no una máscara por fruta.
-- **Qué falta comprobar:** cuánto se parece la máscara convertida (polígono con trozos unidos y sin agujeros) a la original. Lo mediremos con el IoU entre ambas en todas las frutas: si sale alto, usamos `convert_coco` tal cual; si no, escribimos nuestra propia conversión. También lo revisaremos visualmente con `visualize.py`.
+  | | `convert_coco` tal cual | Nuestra conversión |
+  |---|---|---|
+  | IoU medio | 0,766 | **0,928** |
+  | Frutas con IoU ≥ 0,75 | 61,0 % | **92,4 %** |
+  | Frutas con IoU ≥ 0,95 | 9,2 % | **62,3 %** |
+  | Frutas de 1 trozo, IoU medio | 0,874 | **0,995** |
+  | Frutas de 5 o más trozos, IoU medio | 0,646 | **0,829** |
+
+- **Por qué `convert_coco` perdía tanto:** no por la conversión del contorno (rellenarlo directamente da un IoU de 0,995), sino por un **problema de redondeo**. Las coordenadas se guardan normalizadas, y al volver a píxeles salen valores como 99,99996, que `polygon2mask` **trunca** a 99. La máscara se desplaza un píxel, y en una fruta de 10×10 eso baja el IoU a 0,75. Este truncado también ocurre al entrenar, así que el modelo aprendería máscaras desplazadas.
+- **Respuesta:** **usamos nuestra propia conversión** (`team_G17/src/prepare_dataset.py`). Hace lo mismo que `convert_coco` (mismos contornos y misma unión de trozos con `merge_multi_segment` de Ultralytics), pero:
+  1. escribe cada punto desplazado **medio píxel** (x + 0,5), para que al truncar caiga en el píxel correcto;
+  2. incluye los fragmentos `iscrowd` (ver abajo).
+- **Lo que queda:** las frutas de muchos trozos siguen perdiendo algo (IoU medio 0,83 con 5 o más trozos) porque YOLO exige un único polígono por fruta, y los agujeros se rellenan. Es un límite del formato de YOLO; si más adelante vemos que las máscaras son el punto débil, se puede revisar.
 - **Sobre `iscrowd`:** en COCO original marca grupos de objetos anotados juntos (por ejemplo, una multitud), que la evaluación ignora. En este proyecto lo usan para los fragmentos de menos de 20 píxeles visibles: detectarlos no suma y no detectarlos no resta.
   - **Decisión: los incluimos en el entrenamiento como frutas.** Si los dejáramos fuera, sus píxeles contarían como fondo y el modelo aprendería que una fruta muy pequeña "no es fruta", justo lo contrario de lo que queremos para las de 20-30 px, que sí puntúan. Y como la evaluación ignora las detecciones sobre ellos, detectarlos no nos penaliza.
-  - **Cómo:** `convert_coco` se salta las anotaciones con `iscrowd: 1`, así que antes de convertir hacemos una copia del JSON con `iscrowd: 0` en todas. Si un fragmento es tan pequeño que su contorno tiene menos de 3 puntos, `convert_coco` usa su caja como polígono.
+  - Si un fragmento es tan pequeño que su contorno tiene menos de 3 puntos, se usa el rectángulo de sus píxeles como polígono.
 
 ### D7. ¿Cómo separamos train y validación? 🟢
 - **Respuesta:** **80/20, igual para cada árbol**: 10 imágenes de cada uno de los 4 árboles para validación (40 en total) y las otras 160 para entrenar. Así las cuatro especies están igual de representadas.
