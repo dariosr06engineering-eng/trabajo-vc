@@ -180,8 +180,8 @@ El orden está pensado para tener **cuanto antes una versión completa que funci
 
 ### Fase 0. Preparar el entorno
 1. ✅ Instalar **Python 3.12**, que es la versión con la que se evalúa. Hecho: Python 3.12.10, junto a la 3.14 que ya había. `python` sigue siendo la 3.14; la 3.12 se usa con `py -3.12`.
-2. Crear un entorno virtual e instalar PyTorch con CUDA, Ultralytics y `pycocotools`.
-3. Descomprimir `data/fruits_part1.zip` en `data/` y añadir un `.gitignore` para no subir a git el dataset descomprimido, el convertido, `runs/` ni el entorno virtual.
+2. ✅ Crear un entorno virtual e instalar PyTorch con CUDA, Ultralytics y `pycocotools`. Hecho: `.venv` con Python 3.12.10, PyTorch 2.11.0 + CUDA 12.8, torchvision 0.26.0, Ultralytics 8.4.218, pycocotools 2.0.11 y faster-coco-eval 1.8.1. PyTorch detecta la RTX 3060.
+3. ✅ Descomprimir `data/fruits_part1.zip` en `data/` y añadir un `.gitignore` para no subir a git el dataset descomprimido, el convertido, `runs/` ni el entorno virtual.
 
 ### Fase 1. Comprobar las herramientas
 4. Ejecutar la `example_submission/` del starter kit sobre el train y puntuarla con `evaluate.py`. No es nuestro método: solo sirve para comprobar que el entorno y la evaluación funcionan, y para tener una nota de referencia mínima.
