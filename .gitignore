@@ -1,0 +1,14 @@
+# Entorno virtual y cachés de Python
+.venv/
+__pycache__/
+*.pyc
+.ipynb_checkpoints/
+
+# Dataset descomprimido (el zip original sí está en git) y dataset convertido a formato YOLO
+data/fruits_part1/
+datasets/
+
+# Salidas de Ultralytics (entrenamientos y predicciones) y pruebas locales
+runs/
+vis/
+predictions*.json

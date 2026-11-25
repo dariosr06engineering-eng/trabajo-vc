@@ -2,11 +2,11 @@
 
 Asignatura: Visión por Computador, curso 2026-27, ETSI Informática (UMA).
 
-**Miembros del grupo:** Darío Sanjuán Romero y Laura Santiago Medina.
+**Grupo:** G17. **Miembros:** Darío Sanjuán Romero y Laura Santiago Medina.
 
 > Este README es el documento central del proyecto. Aquí iremos explicando qué hay que hacer, cómo está organizado el repositorio, qué hemos analizado de los datos y qué decisiones técnicas tomamos (y por qué).
 >
-> **Estado actual:** fase de estudio. Todavía no hay código. Lo que aparece en la sección 6 es un **plan propuesto**, todavía sin validar con experimentos.
+> **Estado actual:** terminada la fase de estudio. Las decisiones de partida están tomadas (sección 7) y el plan de trabajo está en la sección 6. Empezamos con el código.
 >
 > Las preguntas que tenemos abiertas (para el profesor o para resolver con experimentos) están en [DUDAS.md](DUDAS.md).
 
@@ -50,15 +50,30 @@ trabajo-vc/
 │       ├── PRACTICAS/     prácticas hechas por nosotros (notebooks + PDFs exportados de Colab)
 │       ├── CONTENIDO_TEMAx.md, ALL.md, INDICE.md   resúmenes de cada tema
 ├── starter_kit/           herramientas oficiales de la Parte 1 (evaluate.py, check_submission.py, visualize.py, example_submission/)
+├── team_G17/             (por crear) la carpeta que se entrega: ver abajo
 ├── DUDAS.md               preguntas abiertas y cómo se van resolviendo
 └── README.md              este documento
 ```
 
 - `data/`: todo lo que viene del Campus para hacer el proyecto (datos).
 - `info/`: el enunciado, nuestras prácticas anteriores y la teoría. Sirve de referencia, no forma parte de la entrega.
-- `README.md`: la explicación de todo el proyecto y de las decisiones técnicas.
+- `starter_kit/`: las herramientas oficiales para puntuar y comprobar la entrega. Tampoco se entrega.
+- `README.md`: la explicación de todo el proyecto y de las decisiones técnicas. Es nuestro cuaderno de trabajo; la entrega tiene su propio README, más corto.
 
-**Formato de entrega** (según el enunciado): una carpeta `team_<nombre>/` con `README.md`, `requirements.txt` (versiones exactas con `==`), `main.py` y, opcionalmente, `src/` y `weights/`. Tamaño máximo: 500 MB. **No se puede incluir el dataset**, ni entornos virtuales (`.venv/`), ni cachés (`__pycache__/`). Cuando empecemos a programar habrá que crear esa carpeta y un `.gitignore`.
+**Formato de entrega** (según el enunciado): una carpeta `team_<nombre>/` (la nuestra: `team_G17/`, que se sube como `team_G17.zip`) con `README.md`, `requirements.txt` (versiones exactas con `==`), `main.py` y, opcionalmente, `src/` y `weights/`. Tamaño máximo: 500 MB. **No se puede incluir el dataset**, ni entornos virtuales (`.venv/`), ni cachés (`__pycache__/`).
+
+**Cómo vamos a organizar la entrega:**
+
+```
+team_G17/
+├── README.md          lo que pide el enunciado: miembros, método, entrenamiento, resultados, recursos externos
+├── requirements.txt   dependencias con versión exacta
+├── main.py            punto de entrada: python main.py detect ...
+├── src/               el resto del código: preparar el dataset, entrenar, inferir
+└── weights/           el modelo entrenado (.pt)
+```
+
+El código de entrenamiento va dentro de `src/` porque el enunciado exige entregarlo. Lo que se genera al trabajar (el dataset descomprimido, el dataset convertido a formato YOLO, las carpetas `runs/` de Ultralytics y el entorno virtual) se queda **fuera** de `team_G17/` y fuera de git, con un `.gitignore`.
 
 ---
 
@@ -137,6 +152,7 @@ Usando los rangos de COCO: **el 87,5 % son *small*** (menos de 32×32 = 1.024 px
 2. **Cada imagen contiene una sola especie.** Lo hemos comprobado en las 200 imágenes del train, y sabemos que cada árbol es de una sola especie (ver D1 en [DUDAS.md](DUDAS.md)). Esto permite decidir la especie por votación entre todas las detecciones de la imagen. Antes de aplicarlo a todas las detecciones, mediremos en validación cuánto mejora la AP.
 3. **Hay 4 árboles, uno por especie, con 50 imágenes cada uno.** Si unimos las imágenes que comparten algún `fruit_id`, salen exactamente 4 grupos de 50 imágenes, cada uno de una sola especie y sin ningún `fruit_id` en común entre grupos. Trabajamos con esto (ver D3 en [DUDAS.md](DUDAS.md)). La consecuencia es importante: **no podemos validar con un árbol que el modelo no haya visto** sin quedarnos sin ejemplos de una especie. La validación tendrá que hacerse con imágenes de los mismos árboles y, por tanto, saldrá **más optimista** que el resultado real en el test (que son árboles distintos). El enunciado ya avisa de que la nota del test suele ser más baja.
 4. **Solo cuentan las frutas de 20 píxeles de área o más** (no 20×20). Las de menos de 20 píxeles están anotadas con `iscrowd: 1` y la evaluación las ignora. Aun así, el 71,5 % de las frutas que se evalúan miden menos de 400 px (ver D10 en [DUDAS.md](DUDAS.md)).
+5. **La mayoría de las frutas están partidas en trozos.** Por culpa de las hojas y ramas, el 66,8 % de las frutas evaluadas tienen una máscara de 2 o más trozos (el 18,3 %, de 5 o más), y el 19 % tienen algún agujero. Esto importa al convertir las máscaras al formato de YOLO, que usa un único polígono por fruta (ver D6 en [DUDAS.md](DUDAS.md)).
 
 ---
 
@@ -158,29 +174,35 @@ Hemos revisado la teoría (L2–L8) y nuestras prácticas para ver qué nos sirv
 
 ---
 
-## 6. Plan propuesto (pendiente de validar)
+## 6. Plan de trabajo
 
-### Enfoque principal: YOLO de segmentación con fine-tuning
+El orden está pensado para tener **cuanto antes una versión completa que funcione de principio a fin** (aunque puntúe poco) y mejorarla después midiendo cada cambio.
 
-Ultralytics, la librería de la práctica 7.5, también tiene modelos de **segmentación de instancias** (variantes `-seg`), que devuelven caja + clase + máscara para cada objeto. El flujo de trabajo sería el mismo que en la práctica, solo cambiando el tipo de modelo. Por eso lo vemos como la opción más razonable para empezar.
+### Fase 0. Preparar el entorno
+1. ✅ Instalar **Python 3.12**, que es la versión con la que se evalúa. Hecho: Python 3.12.10, junto a la 3.14 que ya había. `python` sigue siendo la 3.14; la 3.12 se usa con `py -3.12`.
+2. Crear un entorno virtual e instalar PyTorch con CUDA, Ultralytics y `pycocotools`.
+3. Descomprimir `data/fruits_part1.zip` en `data/` y añadir un `.gitignore` para no subir a git el dataset descomprimido, el convertido, `runs/` ni el entorno virtual.
 
-Pasos previstos:
-1. Conseguir el starter kit y comprobar que `evaluate.py` funciona con las anotaciones.
-2. Convertir las anotaciones de COCO (máscaras en RLE) al formato que pide YOLO-seg (polígonos normalizados). Ojo con las frutas que una hoja parte en varios trozos.
-3. Separar train/validación (ver la limitación del apartado 4).
-4. Hacer fine-tuning partiendo de pesos preentrenados.
-5. Inferencia y escritura del JSON en formato COCO con `pycocotools`.
-6. Medir con `evaluate.py` y comprobar la entrega con `check_submission.py`.
+### Fase 1. Comprobar las herramientas
+4. Ejecutar la `example_submission/` del starter kit sobre el train y puntuarla con `evaluate.py`. No es nuestro método: solo sirve para comprobar que el entorno y la evaluación funcionan, y para tener una nota de referencia mínima.
 
-### Cosas que hay que investigar
+### Fase 2. Preparar los datos
+5. **Separar train y validación** (D7): 10 imágenes de cada árbol para validación (40 en total) y 160 para entrenar. Los árboles se identifican agrupando las imágenes que comparten `fruit_id`. Los ids de validación se guardan en un fichero (`val_ids.txt`) para usarlo con `evaluate.py --images-file`.
+6. **Convertir las anotaciones a formato YOLO-seg** (D6), usando el `convert_coco` de Ultralytics. Incluimos también los fragmentos `iscrowd` como frutas (ver la decisión en la sección 7).
+7. **Medir la calidad de la conversión**: volver a pintar cada polígono como máscara y calcular su IoU con la máscara original. Si se pierde demasiado (frutas partidas, agujeros), escribimos nuestra propia conversión.
 
-- **Objetos pequeños:** entrenar e inferir a más resolución (`imgsz` alto) y/o dividir la imagen en trozos (*tiling*, por ejemplo con la librería SAHI) y luego juntar las detecciones. Hay que comprobar que cabe en 6 GB de GPU y en 20 minutos.
-- **Tiempo de ejecución:** no sabemos cuántas imágenes tiene el test. Habrá que medir cuánto tarda nuestro método por imagen para no pasarnos.
-- **Especie por imagen:** cada árbol es de una sola especie, así que la especie se puede decidir por votación en toda la imagen. Hay que medir en validación cuánto mejora la AP.
-- **Refinar máscaras con SAM:** probar si mejora la AP en los umbrales altos de IoU (AP75), teniendo en cuenta que SAM es pesado (el `vit_h` de la práctica ocupa mucha memoria).
-- **Alternativa:** Mask R-CNN (torchvision), si YOLO-seg no funcionara bien.
-- **Entorno:** fijar versiones compatibles con Python 3.12 y CUDA, guardar los pesos en `weights/` y comprobar que nada se descarga durante la ejecución.
-- **Dónde entrenar:** Google Colab u otra máquina con GPU.
+### Fase 3. Primera versión completa
+8. Entrenar YOLO-seg con fine-tuning a `imgsz=1280` en la RTX 3060.
+9. Escribir `main.py detect`: inferencia → máscaras → RLE → JSON en formato COCO.
+10. Puntuar la validación con `evaluate.py` y anotar el resultado en la sección 8.
+11. Medir el tiempo por imagen y la memoria de GPU, y pasar `check_submission.py`.
+
+### Fase 4. Mejoras (cada una se mide en validación antes de quedárnosla)
+- Votación de la especie por imagen (D1).
+- Ajustar el tamaño del modelo, el número de épocas y el umbral de confianza.
+- Si la resolución completa no basta para las frutas pequeñas: partir la imagen en trozos solapados (D5).
+- Probar a refinar las máscaras con SAM, si el tiempo lo permite.
+- Reentrenar con las 200 imágenes para el modelo final, con los ajustes elegidos.
 
 ### Parte 2 (cuando se publique)
 
@@ -190,12 +212,32 @@ Lo que ya sabemos: el detector de la Parte 1 es el punto de partida, cada anotac
 
 ## 7. Decisiones técnicas
 
-_Se irán añadiendo a medida que hagamos experimentos, cada una con su justificación y los resultados obtenidos._
+Cada decisión indica de qué duda sale (ver [DUDAS.md](DUDAS.md)) y por qué la tomamos. Si un experimento la contradice, se cambia aquí y se explica.
+
+| Decisión | Por qué | Duda |
+|---|---|---|
+| **Modelo: YOLO de segmentación** (Ultralytics, variantes `-seg`) con fine-tuning desde pesos preentrenados | Es el mismo flujo que la práctica 7.5, pero devuelve una máscara por fruta. Plan B: Mask R-CNN (torchvision). | D4 |
+| **Resolución: imagen a tamaño real** (`imgsz=1280`) | Con 640 px la fruta mediana (13×13) se quedaría en unos 6×6. Partir la imagen en trozos solo si esto no basta. | D5 |
+| **Conversión de máscaras: `convert_coco` de Ultralytics**, pendiente de medir su calidad | Admite RLE y une los trozos de cada fruta en un polígono. Pierde los agujeros, así que mediremos el IoU de la conversión antes de darla por buena. | D6 |
+| **Los fragmentos `iscrowd` se incluyen en el entrenamiento como frutas** | La evaluación ignora las detecciones sobre ellos (ni suman ni restan), así que detectarlos no penaliza. En cambio, si los dejamos fuera, sus píxeles cuentan como fondo y el modelo aprende que una fruta muy pequeña "no es fruta", justo lo contrario de lo que queremos para las de 20-30 px, que sí puntúan. Como `convert_coco` se los salta, hay que ponerles `iscrowd: 0` en una copia del JSON antes de convertir. | D6 |
+| **Validación: 80/20 por árbol** (10 imágenes de cada árbol) | Las cuatro especies igual de representadas. No se puede separar por árboles (solo hay uno por especie), así que la validación saldrá optimista. | D3, D7 |
+| **Especie: una por imagen**, aplicada por votación si mejora la AP en validación | Cada árbol es de una sola especie. | D1 |
+| **Entrenamiento en local**, RTX 3060 de 12 GB (plan B: Google Colab) | Sin límites de tiempo ni desconexiones. La GPU de evaluación tiene 6 GB, así que hay que vigilar la memoria de la inferencia. | D8 |
+| **Presupuesto de tiempo: ~6 s por imagen**, con margen | Referencia de `check_submission.py`: test de 200 imágenes en 20 minutos, incluida la carga del modelo. | D2 |
 
 ## 8. Resultados
 
-_Pendiente. Aquí irán las métricas de `evaluate.py` sobre nuestras imágenes de validación._
+_Pendiente. Aquí irán las métricas de `evaluate.py` sobre nuestras imágenes de validación, empezando por la `example_submission/` como referencia mínima._
 
 ## 9. Modelos, datos y librerías externas
 
-_Pendiente. El enunciado obliga a citar cada modelo preentrenado, dataset externo o librería no habitual, con su enlace._
+El enunciado obliga a citar cada modelo preentrenado, dataset externo o librería no habitual, con su enlace. De momento, previstos:
+
+| Recurso | Para qué | Enlace |
+|---|---|---|
+| Ultralytics | Entrenar e inferir con YOLO de segmentación | https://github.com/ultralytics/ultralytics |
+| Pesos preentrenados de YOLO-seg (COCO) | Punto de partida del fine-tuning. El tamaño concreto del modelo está por decidir | https://docs.ultralytics.com/tasks/segment/ |
+| pycocotools | Leer las anotaciones y codificar las máscaras en RLE | https://github.com/cocodataset/cocoapi |
+| faster-coco-eval | Lo necesita `convert_coco` para leer máscaras RLE | https://github.com/MiXaiLL76/faster_coco_eval |
+
+No usamos datasets externos.
