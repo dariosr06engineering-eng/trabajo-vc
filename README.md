@@ -133,8 +133,9 @@ Usando los rangos de COCO: **el 87,5 % son *small*** (menos de 32×32 = 1.024 px
 **Conclusiones del análisis:**
 
 1. **El principal reto son las frutas pequeñas.** Casi todas ocupan muy pocos píxeles y muchas están tapadas en parte por hojas. Si se reduce la imagen (por ejemplo, a 640 px, que es lo típico en YOLO), muchas frutas pasan a medir 2-3 píxeles y es prácticamente imposible segmentarlas bien. Hay que trabajar a alta resolución o por trozos de la imagen.
-2. **En el train, cada imagen contiene una sola especie.** Lo hemos comprobado en las 200 imágenes. Esto permite decidir la especie por votación entre todas las detecciones de la imagen. **Ojo:** el enunciado no garantiza que en el test pase lo mismo, así que es una hipótesis que habría que confirmar (por ejemplo, preguntando al profesor) antes de basar el método en ella.
-3. **Probablemente hay 4 árboles, uno por especie, con 50 imágenes cada uno.** Lo deducimos así: si unimos las imágenes que comparten algún `fruit_id`, salen exactamente 4 grupos de 50 imágenes, cada uno de una sola especie, sin ningún `fruit_id` en común entre grupos. El enunciado no da un identificador de árbol, así que esto es una deducción, no un dato oficial. La consecuencia es importante: **no podemos validar con un árbol que el modelo no haya visto** sin quedarnos sin ejemplos de una especie. La validación tendrá que hacerse con imágenes del mismo árbol y, por tanto, saldrá **más optimista** que el resultado real en el test (que son árboles distintos). El enunciado ya avisa de que la nota del test suele ser más baja.
+2. **Cada imagen contiene una sola especie.** Lo hemos comprobado en las 200 imágenes del train, y sabemos que cada árbol es de una sola especie (ver D1 en [DUDAS.md](DUDAS.md)). Esto permite decidir la especie por votación entre todas las detecciones de la imagen. Antes de aplicarlo a todas las detecciones, mediremos en validación cuánto mejora la AP.
+3. **Hay 4 árboles, uno por especie, con 50 imágenes cada uno.** Si unimos las imágenes que comparten algún `fruit_id`, salen exactamente 4 grupos de 50 imágenes, cada uno de una sola especie y sin ningún `fruit_id` en común entre grupos. Trabajamos con esto (ver D3 en [DUDAS.md](DUDAS.md)). La consecuencia es importante: **no podemos validar con un árbol que el modelo no haya visto** sin quedarnos sin ejemplos de una especie. La validación tendrá que hacerse con imágenes de los mismos árboles y, por tanto, saldrá **más optimista** que el resultado real en el test (que son árboles distintos). El enunciado ya avisa de que la nota del test suele ser más baja.
+4. **Solo cuentan las frutas de 20 píxeles de área o más** (no 20×20). Las de menos de 20 píxeles están anotadas con `iscrowd: 1` y la evaluación las ignora. Aun así, el 71,5 % de las frutas que se evalúan miden menos de 400 px (ver D10 en [DUDAS.md](DUDAS.md)).
 
 ---
 
@@ -174,7 +175,7 @@ Pasos previstos:
 
 - **Objetos pequeños:** entrenar e inferir a más resolución (`imgsz` alto) y/o dividir la imagen en trozos (*tiling*, por ejemplo con la librería SAHI) y luego juntar las detecciones. Hay que comprobar que cabe en 6 GB de GPU y en 20 minutos.
 - **Tiempo de ejecución:** no sabemos cuántas imágenes tiene el test. Habrá que medir cuánto tarda nuestro método por imagen para no pasarnos.
-- **Especie por imagen:** usar la votación solo si se confirma que el test también tiene una especie por imagen.
+- **Especie por imagen:** cada árbol es de una sola especie, así que la especie se puede decidir por votación en toda la imagen. Hay que medir en validación cuánto mejora la AP.
 - **Refinar máscaras con SAM:** probar si mejora la AP en los umbrales altos de IoU (AP75), teniendo en cuenta que SAM es pesado (el `vit_h` de la práctica ocupa mucha memoria).
 - **Alternativa:** Mask R-CNN (torchvision), si YOLO-seg no funcionara bien.
 - **Entorno:** fijar versiones compatibles con Python 3.12 y CUDA, guardar los pesos en `weights/` y comprobar que nada se descarga durante la ejecución.
