@@ -184,7 +184,7 @@ El orden está pensado para tener **cuanto antes una versión completa que funci
 3. ✅ Descomprimir `data/fruits_part1.zip` en `data/` y añadir un `.gitignore` para no subir a git el dataset descomprimido, el convertido, `runs/` ni el entorno virtual.
 
 ### Fase 1. Comprobar las herramientas
-4. Ejecutar la `example_submission/` del starter kit sobre el train y puntuarla con `evaluate.py`. No es nuestro método: solo sirve para comprobar que el entorno y la evaluación funcionan, y para tener una nota de referencia mínima.
+4. ✅ Ejecutar la `example_submission/` del starter kit sobre el train y puntuarla con `evaluate.py`. No es nuestro método: solo sirve para comprobar que el entorno y la evaluación funcionan, y para tener una nota de referencia mínima. Hecho: AP = 0,0065 (ver sección 8). Para ejecutarla hubo que instalar `scipy` en el entorno.
 
 ### Fase 2. Preparar los datos
 5. **Separar train y validación** (D7): 10 imágenes de cada árbol para validación (40 en total) y 160 para entrenar. Los árboles se identifican agrupando las imágenes que comparten `fruit_id`. Los ids de validación se guardan en un fichero (`val_ids.txt`) para usarlo con `evaluate.py --images-file`.
@@ -227,7 +227,30 @@ Cada decisión indica de qué duda sale (ver [DUDAS.md](DUDAS.md)) y por qué la
 
 ## 8. Resultados
 
-_Pendiente. Aquí irán las métricas de `evaluate.py` sobre nuestras imágenes de validación, empezando por la `example_submission/` como referencia mínima._
+Todas las métricas son de `evaluate.py`, el mismo script con el que se puntúa el test.
+
+### Referencia mínima: `example_submission/` del starter kit
+
+Detector por umbral de color (HSV), sin aprendizaje. Al no entrenarse, se puntúa sobre las **200 imágenes del train**. Ejecutado en CPU: 180 s en total, **0,9 s por imagen**.
+
+| Métrica | Valor |
+|---|---|
+| **AP** (principal) | **0,0065** |
+| AP50 / AP75 | 0,0216 / 0,0025 |
+| AP naranja / manzana / pera / limón | 0,0034 / 0,0067 / 0,0000 / 0,0160 |
+| AP_agnostic | 0,0154 |
+| accuracy (especie) | 0,3916 |
+| AP_small / AP_medium / AP_large | 0,0026 / 0,0640 / 0,1020 |
+| Detecciones / frutas | 15.656 / 11.076 |
+
+**Qué nos dice:**
+- La evaluación funciona en nuestra máquina y el formato del JSON es correcto.
+- Es la nota que hay que superar con claridad: prácticamente 0.
+- Confirma lo que esperábamos del análisis: el umbral de color **no encuentra ninguna pera** (AP 0, porque son verdes como las hojas), acierta la especie solo el 39 % de las veces y falla sobre todo en las frutas pequeñas (AP_small 0,0026 frente a AP_large 0,10).
+
+### Nuestro método
+
+_Pendiente: métricas sobre las 40 imágenes de validación._
 
 ## 9. Modelos, datos y librerías externas
 
