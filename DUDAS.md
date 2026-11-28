@@ -46,6 +46,8 @@ Cuando una duda se resuelva, se marca como resuelta, se apunta la respuesta y, s
 - **Respuesta:** **primero, la opción sencilla**: entrenar e inferir con la imagen a su tamaño real (`imgsz=1280`), y medir la AP y el tiempo.
 - **Si no basta:** partir la imagen en trozos (*tiling*). Los trozos tienen que solaparse para no cortar frutas, y al juntarlos hay que eliminar las detecciones duplicadas. Es más complejo, así que solo lo haremos si la opción sencilla se queda corta.
 - **A vigilar:** la memoria de GPU (la de evaluación tiene 6 GB) y el tiempo (ver D2).
+- **Lo que hemos aprendido con la versión 1:** la imagen a tamaño real no basta, pero no por cómo se le pasa la imagen a YOLO, sino por **cómo trabaja YOLO por dentro**. Genera las máscaras a 1/4 de la resolución de su entrada y detecta, como mucho, a 1/8. Para frutas de 13×13 píxeles eso es demasiado grueso: simulando un detector perfecto, la AP máxima a 1/4 es ≈ 0,30, y la versión 1 ya saca 0,331. Partir la imagen en trozos tampoco lo resolvería si los trozos no se amplían.
+- **Siguiente paso:** el **experimento ×2** (README, fase 4): entrenar con recortes de 320 ampliados a 640 y detectar con la imagen ampliada a 2560. Las máscaras pasan a 1/2 de la resolución original (techo simulado ≈ 0,60). Está preparado y falta ejecutarlo en la GPU.
 
 ### D6. ¿Cómo convertimos las máscaras RLE al formato de YOLO? 🟢
 - **El problema:** las anotaciones están en RLE (COCO), y YOLO-seg entrena con un `.txt` por imagen con una línea por objeto: `<clase> x1 y1 x2 y2 ...`, un **único polígono** por objeto, con coordenadas entre 0 y 1 y al menos 3 puntos.

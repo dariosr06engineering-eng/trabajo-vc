@@ -35,7 +35,12 @@ def progress(k, n, name):
 
 def detect(args):
     images = json.loads((args.input / "images.json").read_text())["images"]
-    detector = FruitDetector(device=args.device, species_vote=args.species_vote)
+    options = {"device": args.device, "species_vote": args.species_vote}
+    if args.weights:
+        options["weights"] = args.weights
+    if args.imgsz:
+        options["imgsz"] = args.imgsz
+    detector = FruitDetector(**options)
     results = []
     for k, im in enumerate(images, 1):
         progress(k, len(images), im["file_name"])
@@ -46,6 +51,9 @@ def detect(args):
                             "segmentation": to_rle(mask)})
     args.output.write_text(json.dumps(results))
     print(f"{len(results)} detecciones escritas en {args.output}")
+    if detector.device != "cpu":
+        import torch
+        print(f"Pico de memoria de GPU: {torch.cuda.max_memory_reserved() / 2**30:.2f} GB")
 
 
 def main():
@@ -55,7 +63,10 @@ def main():
     d.add_argument("--input", type=Path, required=True)
     d.add_argument("--output", type=Path, required=True)
     d.add_argument("--device", default="cuda", choices=["cuda", "cpu"])
+    # Opciones para experimentar; el profesor ejecuta main.py sin ellas, con los valores por defecto del detector
     d.add_argument("--species-vote", action="store_true", help="una sola especie por imagen (votación)")
+    d.add_argument("--weights", type=Path, help="modelo a usar (por defecto weights/fruits.pt)")
+    d.add_argument("--imgsz", type=int, help="lado largo de la entrada (por defecto 1280; 2560 = imagen ampliada x2)")
     args = p.parse_args()
     if args.task == "detect":
         detect(args)

@@ -50,6 +50,7 @@ trabajo-vc/
 │       ├── PRACTICAS/     prácticas hechas por nosotros (notebooks + PDFs exportados de Colab)
 │       ├── CONTENIDO_TEMAx.md, ALL.md, INDICE.md   resúmenes de cada tema
 ├── starter_kit/           herramientas oficiales de la Parte 1 (evaluate.py, check_submission.py, visualize.py, example_submission/)
+├── tools/                 scripts de análisis (errores, techos de AP); no forman parte de la entrega
 ├── team_G17/             la carpeta que se entrega: ver abajo
 ├── DUDAS.md               preguntas abiertas y cómo se van resolviendo
 └── README.md              este documento
@@ -58,6 +59,7 @@ trabajo-vc/
 - `data/`: todo lo que viene del Campus para hacer el proyecto (datos).
 - `info/`: el enunciado, nuestras prácticas anteriores y la teoría. Sirve de referencia, no forma parte de la entrega.
 - `starter_kit/`: las herramientas oficiales para puntuar y comprobar la entrega. Tampoco se entrega.
+- `tools/`: nuestros scripts para analizar los resultados (sección 8). Solo usan la CPU y tampoco se entregan.
 - `README.md`: la explicación de todo el proyecto y de las decisiones técnicas. Es nuestro cuaderno de trabajo; la entrega tiene su propio README, más corto.
 
 **Formato de entrega** (según el enunciado): una carpeta `team_<nombre>/` (la nuestra: `team_G17/`, que se sube como `team_G17.zip`) con `README.md`, `requirements.txt` (versiones exactas con `==`), `main.py` y, opcionalmente, `src/` y `weights/`. Tamaño máximo: 500 MB. **No se puede incluir el dataset**, ni entornos virtuales (`.venv/`), ni cachés (`__pycache__/`).
@@ -207,18 +209,56 @@ El orden está pensado para tener **cuanto antes una versión completa que funci
 > .venv\Scripts\python.exe starter_kit\evaluate.py --gt data\fruits_part1\train\annotations.json --pred predictions.json --images-file datasets\fruits_yolo\val_ids.txt
 > ```
 
-8. ✅ Entrenar YOLO-seg con fine-tuning en la RTX 3060. A 1280 px no cabía en memoria (D12), así que **entrenamos con recortes de 640×640 de las imágenes a su resolución original** y detectamos sobre la imagen completa a 1280 (sección 7). **Ojo con dos opciones de Ultralytics** que por defecto perjudican a las frutas pequeñas: al entrenar, las máscaras se reducen a 1/4 de resolución (`mask_ratio=4`), y al predecir se devuelven máscaras de baja resolución reescaladas (`retina_masks=False`). Hay que probar `mask_ratio` más bajo y `retina_masks=True`.
+8. ✅ Entrenar YOLO-seg con fine-tuning en la RTX 3060. A 1280 px no cabía en memoria (D12), así que **entrenamos con recortes de 640×640 de las imágenes a su resolución original** y detectamos sobre la imagen completa a 1280 (sección 7). Al detectar usamos `retina_masks=True` (máscaras ampliadas a la resolución de la imagen). La resolución interna de las máscaras resultó ser el límite principal: ver la fase 4.
 9. ✅ Escribir `main.py detect`: inferencia → máscaras → RLE → JSON en formato COCO.
 10. ✅ Puntuar la validación con `evaluate.py` y anotar el resultado en la sección 8.
 11. Medir el tiempo por imagen y la memoria de GPU (✅ hecho: 1,14 s por imagen y 1,6 GB de GPU como máximo), y pasar `check_submission.py` (pendiente: falta el `requirements.txt` de la entrega).
 
 ### Fase 4. Mejoras (cada una se mide en validación antes de quedárnosla)
-- ~~Votación de la especie por imagen (D1).~~ Probada: no cambia nada, porque el modelo ya acierta la especie en el 100 % de las detecciones (accuracy 1,000).
-- **Prioridad: las frutas pequeñas** (AP_small 0,25 frente a 0,83 en las medianas). Probar a entrenar más tiempo (solo fueron 10 minutos), un modelo más grande (`yolo11m-seg`) y recortes más pequeños o con más solapamiento.
-- Ajustar el número de épocas y el umbral de confianza.
-- Si la resolución completa no basta para las frutas pequeñas: partir la imagen en trozos solapados (D5).
-- Probar a refinar las máscaras con SAM, si el tiempo lo permite.
-- Reentrenar con las 200 imágenes para el modelo final, con los ajustes elegidos.
+
+**Diagnóstico de la versión 1** (cifras en la sección 8, "Análisis de errores de la versión 1"): el límite actual es la **resolución a la que trabaja YOLO**, no el entrenamiento ni el enunciado.
+- YOLO-seg genera las máscaras a **1/4 de la resolución de su entrada**: los prototipos salen de la capa de *stride* 8 ampliada ×2 (`Proto` en `ultralytics/nn/modules/block.py`) y, al detectar, se amplían con interpolación bilineal hasta el tamaño de la imagen (`process_mask_native` en `ultralytics/utils/ops.py`). Una fruta de 13×13 píxeles queda representada en unas 3×3 celdas.
+- Simulando un detector perfecto con esa limitación, la AP máxima sería **≈ 0,30**. Nuestro modelo saca 0,331, así que **ya está en ese techo** (por eso la curva de entrenamiento se estanca desde la época 20). Con las máscaras a 1/2 de resolución, el techo sube a **≈ 0,60**.
+- La detección tampoco ve bien las frutas diminutas: su capa más fina trabaja a 1/8 de la entrada, y solo encuentra el 13,5 % de las frutas de 20-49 píxeles.
+- Lo que **no** limita: la especie (100 % de acierto), el tamaño de las máscaras (ni grandes ni pequeñas) y el formato de polígono único de YOLO (techo 0,81; a 1/2 de resolución su efecto desaparece).
+
+**Plan, por prioridad:**
+1. **Experimento ×2: ampliar la imagen al doble.** Preparado, pendiente de ejecutar porque necesita la GPU (detalle abajo).
+2. Entrenar más tiempo y, para el modelo final, entrenar con las 200 imágenes (train + validación) con la configuración elegida.
+3. `mask_ratio=2` al entrenar. En YOLO11, si las máscaras reales tienen más resolución que los prototipos, la pérdida se calcula ampliando los prototipos (`v8SegmentationLoss` en `ultralytics/utils/loss.py`), así que el modelo aprende bordes más finos. Cuesta más memoria al entrenar.
+4. Un modelo más grande (`yolo11m-seg`), vigilando el tiempo de detección.
+5. Entrenar sin los fragmentos `iscrowd` (`prepare_dataset.py --no-crowd`), para comprobar si ayudan o molestan.
+
+**Descartado:**
+- Votación de la especie: el modelo ya acierta la especie en el 100 % de las detecciones; la AP es la misma.
+- Erosionar o dilatar las máscaras 1 píxel: la AP baja de 0,331 a 0,266 y 0,270.
+- Mejorar el formato de polígono: no es lo que limita a la resolución a la que trabajamos.
+- Refinar las máscaras con SAM: también genera sus máscaras a 1/4 de su entrada (256×256 para 1024×1024), así que no ayudaría con frutas de 13 píxeles.
+- Partir la imagen en trozos al detectar (D5): sin ampliar los trozos no cambia la resolución; ampliándolos es lo mismo que el experimento ×2, pero más complicado.
+
+#### Experimento ×2 (preparado, pendiente de ejecutar)
+
+**Idea:** que YOLO vea cada fruta al doble de tamaño. Así las máscaras pasan a 1/2 de la resolución de la imagen original (en vez de 1/4) y las frutas diminutas ocupan celdas enteras en la detección. La entrada y la salida de `main.py` siguen siendo exactamente las del enunciado.
+
+**Cómo:**
+- **Entrenamiento:** recortes de 320×320 de las imágenes originales (12 por imagen) que Ultralytics amplía a 640 al cargarlos (`imgsz=640`; `load_image` en `ultralytics/data/base.py` lleva el lado largo de cada imagen a `imgsz`). Cada muestra mide lo mismo que en la versión 1, así que cabe igual en la GPU. El dataset ya está generado: `datasets/fruits_yolo_crop320` (1.920 recortes de train y 480 de validación).
+- **Detección:** `main.py detect --imgsz 2560` amplía la imagen de 1280×960 a 2560×1920 (`LetterBox` de Ultralytics amplía con `scaleup=True`), y las máscaras se devuelven al tamaño original. Comprobado en CPU: funciona y las máscaras salen de 960×1280.
+
+**Comandos** (desde la raíz del repositorio):
+```
+.venv\Scripts\python.exe team_G17\src\train.py --data datasets\fruits_yolo_crop320\data.yaml --name y11s_crop320x2 --model yolo11s-seg.pt --imgsz 640 --batch 8 --time 0.5 --workers 2 --save-to team_G17\weights\fruits_x2.pt
+cd team_G17
+..\.venv\Scripts\python.exe main.py detect --input ..\data\fruits_part1\train --output ..\predictions_x2.json --device cuda --weights weights\fruits_x2.pt --imgsz 2560
+cd ..
+.venv\Scripts\python.exe starter_kit\evaluate.py --gt data\fruits_part1\train\annotations.json --pred predictions_x2.json --images-file datasets\fruits_yolo\val_ids.txt
+.venv\Scripts\python.exe tools\analisis_errores.py --pred predictions_x2.json
+```
+Con 12 recortes por imagen, cada época tiene el triple de iteraciones que en la versión 1; con `--time 0.5` (30 minutos) salen unas 20-25 épocas.
+
+**Qué medir y cómo decidir:**
+1. La AP en validación frente a 0,331, y en especial la de las frutas pequeñas (`AP_small` y la tabla por tamaños de `tools/analisis_errores.py`).
+2. El tiempo por imagen y el pico de memoria de GPU, que `main.py` imprime al terminar. Al detectar se procesa el cuádruple de píxeles, y tiene que caber con margen en la máquina de evaluación (RTX 2060 de 6 GB, 20 minutos para todo el test).
+3. Si mejora y cabe, pasa a ser la configuración por defecto: `IMGSZ = 2560` en `src/detector.py` y el nuevo modelo como `weights/fruits.pt`.
 
 ### Parte 2 (cuando se publique)
 
@@ -241,6 +281,7 @@ Cada decisión indica de qué duda sale (ver [DUDAS.md](DUDAS.md)) y por qué la
 | **Entrenamiento en local**, RTX 3060 de 12 GB (plan B: Google Colab) | Sin límites de tiempo ni desconexiones. La GPU de evaluación tiene 6 GB, así que hay que vigilar la memoria de la inferencia. | D8 |
 | **Presupuesto de tiempo: ~6 s por imagen**, con margen | Referencia de `check_submission.py`: test de 200 imágenes en 20 minutos, incluida la carga del modelo. Ahora gastamos 1,14 s por imagen en la RTX 3060. | D2 |
 | **Inferencia: `conf=0.001`, hasta 300 detecciones, máscaras a resolución completa (`retina_masks=True`), media precisión en GPU** | La AP premia devolver muchas detecciones ordenadas por confianza, y la evaluación tiene en cuenta hasta 300 por imagen. Las máscaras a resolución completa son imprescindibles con frutas tan pequeñas. | D5 |
+| **Inferencia con `rect=True`**: la imagen se rellena solo lo mínimo (1280×960) y no hasta un cuadrado (1280×1280) | Ahorra cómputo: a 1280, un 25 % de los píxeles procesados eran relleno, y lo mismo pasaría a 2560 (2560×2560 en vez de 2560×1920). Comprobado en CPU sobre la validación: AP 0,3305 frente a 0,3313 sin `rect`, una diferencia que entra en lo normal (la prueba anterior fue en GPU con media precisión). | D2 |
 | **Entrenamiento con 2 *workers*** | En Windows, con los 8 por defecto, algunos procesos fallaban al cargar las DLL de PyTorch (`WinError 1114`) y el entrenamiento se quedaba colgado. | D12 |
 
 ## 8. Resultados
@@ -287,6 +328,39 @@ Ejecución completa de `main.py detect` sobre 200 imágenes en la RTX 3060: **22
 - **La especie no es un problema**: el 100 % de las detecciones que encuentran una fruta aciertan su especie, y la AP sin tener en cuenta la especie (0,338) es casi igual que la AP. Por eso la votación por imagen no cambia nada.
 - **El problema son las frutas pequeñas**: AP 0,25 en las *small*, frente a 0,83 en las *medium* y 0,95 en las *large*. Como el 87,5 % de las frutas son pequeñas, ahí está casi todo el margen de mejora.
 - Recordatorio: la validación es de los mismos árboles que el entrenamiento, así que en el test saldrá algo más bajo (D3).
+
+### Análisis de errores de la versión 1
+
+Con `tools/analisis_errores.py` y `tools/techos_resolucion.py` (solo CPU), sobre las 40 imágenes de validación.
+
+**Frutas encontradas, por tamaño** (mejor IoU de cada fruta con alguna detección de su especie):
+
+| Área (píxeles) | Frutas | Encontradas (IoU ≥ 0,5) | Máscara precisa (IoU ≥ 0,75) | IoU medio de las encontradas |
+|---|---|---|---|---|
+| 20-49 | 422 | 13,5 % | 0,5 % | 0,590 |
+| 50-99 | 344 | 37,5 % | 1,7 % | 0,612 |
+| 100-199 | 400 | 64,5 % | 9,2 % | 0,639 |
+| 200-399 | 425 | 90,4 % | 36,0 % | 0,721 |
+| 400-1.023 | 448 | 98,7 % | 77,2 % | 0,823 |
+| ≥ 1.024 | 276 | 100 % | 95,7 % | 0,906 |
+
+El área de las máscaras predichas es la correcta en todos los tamaños (mediana del área predicha / área real entre 0,98 y 1,05). Por eso erosionarlas o dilatarlas 1 píxel empeora la AP (0,266 y 0,270).
+
+**Por número de trozos de la fruta** (por las hojas que la tapan): con 1 trozo encuentra el 85,9 % (65,8 % con IoU ≥ 0,75); con 5 o más, el 44,3 % (5,8 %).
+
+**Techos de AP**: la AP que sacaría un detector perfecto (encuentra todas las frutas y acierta la especie) si sus máscaras tuvieran una limitación.
+
+| Limitación | AP | AP50 | AP75 | AP_small |
+|---|---|---|---|---|
+| Ninguna (máscaras reales) | 1,000 | 1,000 | 1,000 | 1,000 |
+| Nuestras etiquetas YOLO (un polígono por fruta) | 0,813 | 0,983 | 0,868 | 0,792 |
+| Máscaras a 1/2 de resolución (YOLO con la imagen ×2) | 0,603 | 0,902 | 0,636 | 0,560 |
+| Máscaras a 1/4 de resolución (YOLO ahora) | 0,296 | 0,555 | 0,264 | 0,234 |
+| *Nuestro modelo, versión 1* | *0,331* | *0,605* | *0,304* | *0,254* |
+
+La reducción de resolución se simula con la media de cada bloque de píxeles y una ampliación bilineal. Es una aproximación: la red puede hacerlo algo mejor, por eso nuestro modelo supera ligeramente su techo de 1/4. Aun así, la diferencia entre 1/4 y 1/2 es muy grande.
+
+**Curva de entrenamiento**: la AP de máscara que calcula Ultralytics en validación (sobre los recortes) pasa de 0,201 en la época 10 a 0,224 en la 20 y a 0,227 en la 34. Se estanca aunque la pérdida siga bajando, como cabe esperar si el límite es la resolución.
 
 ## 9. Modelos, datos y librerías externas
 

@@ -12,23 +12,26 @@ from ultralytics import YOLO
 
 WEIGHTS = Path(__file__).resolve().parents[1] / "weights" / "fruits.pt"
 
-IMGSZ = 1280           # las imágenes son de 1280x960: así no se reducen
+IMGSZ = 1280           # lado largo de la entrada. Las imágenes son de 1280x960: con 1280 no se reducen, y con
+                       # 2560 se amplían x2 (debe coincidir con la escala a la que se entrenó el modelo)
 CONF = 0.001           # umbral muy bajo: la AP premia devolver muchas detecciones ordenadas por score
 MAX_DET = 300          # máximo que tiene en cuenta la evaluación por imagen
 
 
 class FruitDetector:
-    def __init__(self, device="cuda", weights=WEIGHTS, species_vote=False):
+    def __init__(self, device="cuda", weights=WEIGHTS, imgsz=IMGSZ, species_vote=False):
         self.device = "cuda:0" if device == "cuda" and torch.cuda.is_available() else "cpu"
         self.half = self.device != "cpu"           # media precisión en GPU: más rápido y menos memoria
         self.model = YOLO(str(weights), task="segment")
+        self.imgsz = imgsz
         self.species_vote = species_vote
 
     def detect(self, image_path):
         """Lista de (mask, category_id, score). mask: array booleano (alto, ancho) del tamaño de la imagen."""
         r = self.model.predict(
-            str(image_path), imgsz=IMGSZ, conf=CONF, max_det=MAX_DET, device=self.device, half=self.half,
+            str(image_path), imgsz=self.imgsz, conf=CONF, max_det=MAX_DET, device=self.device, half=self.half,
             retina_masks=True,             # máscaras a la resolución de la imagen, no a 1/4
+            rect=True,                     # rellenar solo lo mínimo (1280x960), no hasta un cuadrado de 1280x1280
             verbose=False,
         )[0]
         if r.masks is None or len(r.boxes) == 0:
