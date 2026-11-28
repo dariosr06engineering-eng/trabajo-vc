@@ -117,3 +117,10 @@ Cuando una duda se resuelva, se marca como resuelta, se apunta la respuesta y, s
 - **Antes de entrenar:** cerrar lo que use la gráfica (fondo animado de Lively Wallpaper, juegos, Overwolf…).
 - **Respuesta:** **YOLO11s-seg entrenado con recortes de 640×640 de las imágenes a resolución nativa** (`prepare_dataset.py --crop 640`), con `imgsz=640`, `batch=8` y 2 *workers*. Cabe de sobra (~5 GB de GPU durante el entrenamiento) y 10 minutos dan una AP de 0,331 en validación. Al detectar se usa la imagen completa a 1280, así que las frutas tienen el mismo tamaño en píxeles que al entrenar.
 - **Otro problema que apareció:** con los 8 *workers* por defecto, algunos procesos fallaban en Windows al cargar las DLL de PyTorch (`WinError 1114`) y el entrenamiento se quedaba colgado sin avanzar. Con `--workers 2` funciona.
+
+### D13. ¿Qué driver de NVIDIA y qué librerías de sistema tiene la máquina de evaluación? 🔴
+- **Por qué importa:** es lo único de la entrega que no podemos probar en nuestra máquina.
+  - **Driver:** instalamos PyTorch 2.11.0 con CUDA 12.8 (incluye código para la RTX 2060, `sm_75`; comprobado). Por la compatibilidad entre versiones menores de CUDA 12, debería funcionar con cualquier driver de NVIDIA 525 o posterior. Si el driver fuera más antiguo, PyTorch no vería la GPU, el detector pasaría a la CPU y no daría tiempo en 20 minutos.
+  - **OpenCV:** Ultralytics depende de `opencv-python`, que en Linux necesita la librería del sistema `libGL` (la tiene cualquier Ubuntu de escritorio, pero no siempre una instalación mínima de servidor). Sin ella, `import cv2` falla y `main.py` no arranca.
+- **Qué hemos comprobado:** que todas las versiones del `requirements.txt` se pueden instalar en Linux con Python 3.12 (resolución de `pip` para la plataforma `manylinux`), que `main.py` funciona sin internet y que `check_submission.py` pasa en nuestra máquina.
+- **Cómo resolverla:** preguntar al profesor qué versión del driver de NVIDIA tiene la máquina, y si la práctica 7.5 (YOLO de Ultralytics) funciona en ella tal cual. La mayoría de grupos usarán Ultralytics, así que lo normal es que sí.

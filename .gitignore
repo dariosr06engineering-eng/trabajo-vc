@@ -19,3 +19,6 @@ predictions*.json
 
 # Modelos entrenados: de momento no se suben a git (se pueden regenerar con src/train.py)
 team_G17/weights/*.pt
+
+# Zips de la entrega (se generan con tools/empaquetar_entrega.py)
+entregas/

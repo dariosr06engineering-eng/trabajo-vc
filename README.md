@@ -50,7 +50,8 @@ trabajo-vc/
 │       ├── PRACTICAS/     prácticas hechas por nosotros (notebooks + PDFs exportados de Colab)
 │       ├── CONTENIDO_TEMAx.md, ALL.md, INDICE.md   resúmenes de cada tema
 ├── starter_kit/           herramientas oficiales de la Parte 1 (evaluate.py, check_submission.py, visualize.py, example_submission/)
-├── tools/                 scripts de análisis (errores, techos de AP); no forman parte de la entrega
+├── tools/                 scripts de análisis (errores, techos de AP) y para empaquetar la entrega; no se entregan
+├── entregas/             (no está en git) el zip listo para subir, generado con tools/empaquetar_entrega.py
 ├── team_G17/             la carpeta que se entrega: ver abajo
 ├── DUDAS.md               preguntas abiertas y cómo se van resolviendo
 └── README.md              este documento
@@ -212,7 +213,7 @@ El orden está pensado para tener **cuanto antes una versión completa que funci
 8. ✅ Entrenar YOLO-seg con fine-tuning en la RTX 3060. A 1280 px no cabía en memoria (D12), así que **entrenamos con recortes de 640×640 de las imágenes a su resolución original** y detectamos sobre la imagen completa a 1280 (sección 7). Al detectar usamos `retina_masks=True` (máscaras ampliadas a la resolución de la imagen). La resolución interna de las máscaras resultó ser el límite principal: ver la fase 4.
 9. ✅ Escribir `main.py detect`: inferencia → máscaras → RLE → JSON en formato COCO.
 10. ✅ Puntuar la validación con `evaluate.py` y anotar el resultado en la sección 8.
-11. Medir el tiempo por imagen y la memoria de GPU (✅ hecho: 1,14 s por imagen y 1,6 GB de GPU como máximo), y pasar `check_submission.py` (pendiente: falta el `requirements.txt` de la entrega).
+11. ✅ Medir el tiempo por imagen y la memoria de GPU (1,14 s por imagen y 1,6 GB de GPU como máximo) y pasar `check_submission.py`: pasa (sección 10).
 
 ### Fase 4. Mejoras (cada una se mide en validación antes de quedárnosla)
 
@@ -373,3 +374,34 @@ El enunciado obliga a citar cada modelo preentrenado, dataset externo o librerí
 | pycocotools | Leer las anotaciones y codificar las máscaras en RLE | https://github.com/cocodataset/cocoapi |
 
 No usamos datasets externos.
+
+## 10. Entrega de la Parte 1
+
+**Estado:** ✅ **entrega válida lista para subir**: `entregas/team_G17.zip`, con la versión 1 (AP 0,331 en validación). Si mejoramos el método, se regenera y se sube la nueva.
+
+**Contenido del zip** (18,8 MB): la carpeta `team_G17/` con `README.md` (el de la entrega, con lo que pide el enunciado), `requirements.txt`, `main.py`, `src/` (detector y código de entrenamiento) y `weights/fruits.pt` (el modelo).
+
+**Comprobaciones hechas:**
+
+| Comprobación | Resultado |
+|---|---|
+| `check_submission.py` completo (entorno nuevo con Python 3.12, instala `requirements.txt` y ejecuta `main.py` con 10 imágenes en la GPU) | **Pasa.** 3,6 s por imagen contando el arranque (importar PyTorch e inicializar CUDA en un entorno nuevo cuesta unos 25 s, que con solo 10 imágenes pesan mucho); estima que 200 imágenes entran en los 20 minutos. Pico de memoria de GPU: 1,65 GB (límite: 6 GB). |
+| `requirements.txt` con versiones exactas, instalable en Linux | Las 40 dependencias se resuelven para Linux y Python 3.12 (`pip install --dry-run` para la plataforma `manylinux`), todas con paquetes ya compilados. |
+| PyTorch válido para la RTX 2060 | PyTorch 2.11.0 con CUDA 12.8 incluye código para su arquitectura (`sm_75`). |
+| Sin internet | `main.py` ejecutado con la red bloqueada dentro de Python: 0 intentos de conexión y el mismo resultado. Además desactiva la comprobación de conexión y la instalación automática de paquetes de Ultralytics (`YOLO_OFFLINE`, `YOLO_AUTOINSTALL`). |
+| Escribir solo la salida y en `/tmp` | Ultralytics guardaba su configuración en la carpeta del usuario; `main.py` la manda a la carpeta temporal (`YOLO_CONFIG_DIR`). Comprobado. |
+
+**Riesgo pendiente:** lo único que no podemos probar es la propia máquina de evaluación: la versión de su driver de NVIDIA y si tiene la librería `libGL` que necesita OpenCV (D13 en [DUDAS.md](DUDAS.md)).
+
+**Cómo regenerar la entrega** (por ejemplo, con un modelo mejor):
+1. Copiar el modelo nuevo a `team_G17/weights/fruits.pt` y, si cambia la configuración, actualizar los valores por defecto de `team_G17/src/detector.py` (por ejemplo `IMGSZ`) y el README de la entrega.
+2. Pasar `check_submission.py`:
+   ```
+   .venv\Scripts\python.exe starter_kit\check_submission.py team_G17 --data data\fruits_part1\train --device cuda
+   ```
+3. Generar el zip, que vuelve a comprobar la estructura:
+   ```
+   .venv\Scripts\python.exe tools\empaquetar_entrega.py
+   ```
+
+**Ojo:** el modelo (`weights/fruits.pt`) y el zip no están en git, solo en el ordenador donde se entrenó. Para generar la entrega desde otro ordenador hay que copiarlos o volver a entrenar.

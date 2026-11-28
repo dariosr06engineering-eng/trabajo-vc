@@ -10,11 +10,20 @@ especie y su confianza.
 
 import argparse
 import json
+import os
 import sys
+import tempfile
 from pathlib import Path
 
 import numpy as np
 from pycocotools import mask as mask_utils
+
+# En la máquina de evaluación solo se puede escribir la salida y temporales en /tmp. Ultralytics guarda su fichero
+# de configuración en la carpeta del usuario, así que lo mandamos a la carpeta temporal antes de importarlo.
+os.environ.setdefault("YOLO_CONFIG_DIR", tempfile.gettempdir())
+# Allí no hay internet: que Ultralytics no compruebe la conexión al importarse ni intente instalar paquetes con pip
+os.environ.setdefault("YOLO_OFFLINE", "1")
+os.environ.setdefault("YOLO_AUTOINSTALL", "0")
 
 sys.path.insert(0, str(Path(__file__).resolve().parent / "src"))
 
