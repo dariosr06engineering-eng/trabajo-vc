@@ -17,6 +17,7 @@ Cuando una duda se resuelva, se marca como resuelta, se apunta la respuesta y, s
   - cada árbol crece "siguiendo los hábitos de su especie";
   - las imágenes se toman alrededor de un único árbol;
   - el fondo son cielos fotografiados en 360° (campos, colinas, nubes), no otros árboles.
+- **Resultado en validación:** el modelo ya acierta la especie en el 100 % de las detecciones, así que la votación por imagen no cambia nada (misma AP). La dejamos como opción (`--species-vote`), sin activar.
 - **Consecuencia:** podemos diseñar el método asumiendo una especie por imagen. Como la confirmación no viene por escrito del profesor, primero mediremos en validación si la votación por imagen mejora la AP antes de aplicarla a todas las detecciones.
 
 ### D2. ¿Cuántas imágenes tiene el test? 🔴
@@ -36,7 +37,7 @@ Cuando una duda se resuelva, se marca como resuelta, se apunta la respuesta y, s
 ## Para resolver nosotros
 
 ### D4. ¿Qué modelo de segmentación de instancias usamos? 🟢
-- **Respuesta:** **YOLO de segmentación** (variantes `-seg` de Ultralytics) con fine-tuning.
+- **Respuesta:** **YOLO de segmentación** (variantes `-seg` de Ultralytics) con fine-tuning. En concreto **YOLO11s-seg**: los YOLO26-seg no caben en memoria al entrenar con tantas frutas por imagen (ver D12).
 - **Por qué:** es la misma librería y el mismo flujo de trabajo que la práctica 7.5 (cargar un modelo preentrenado, `train`, `predict`), pero devuelve una máscara por objeto, que es lo que pide el proyecto.
 - **Plan B:** si no funcionara bien, Mask R-CNN (torchvision).
 
@@ -93,7 +94,7 @@ Cuando una duda se resuelva, se marca como resuelta, se apunta la respuesta y, s
 - **Por qué importa:** la carpeta y el zip de la entrega se llaman `team_<nombre>/` y `team_<nombre>.zip`.
 - **Respuesta:** **G17**. La carpeta de entrega es `team_G17/` y el zip, `team_G17.zip`.
 
-### D12. ¿Con qué configuración cabe el entrenamiento en la GPU? 🔴
+### D12. ¿Con qué configuración cabe el entrenamiento en la GPU? 🟢
 - **Qué ha pasado:** con `imgsz=1280`, ninguna prueba ha llegado a entrenar una época en la RTX 3060 (12 GB, de los que otras aplicaciones ya usan ~1,2 GB):
 
   | Modelo | batch | mosaic | Resultado |
@@ -112,3 +113,5 @@ Cuando una duda se resuelva, se marca como resuelta, se apunta la respuesta y, s
   2. `yolo11s-seg`, `batch=2`, sin mosaic (`--mosaic 0`).
   3. Si nada cabe: dejar fuera los fragmentos `iscrowd` (rehacer el dataset con `prepare_dataset.py --no-crowd --overwrite`), que son el 30 % de los objetos, y repetir.
 - **Antes de entrenar:** cerrar lo que use la gráfica (fondo animado de Lively Wallpaper, juegos, Overwolf…).
+- **Respuesta:** **YOLO11s-seg entrenado con recortes de 640×640 de las imágenes a resolución nativa** (`prepare_dataset.py --crop 640`), con `imgsz=640`, `batch=8` y 2 *workers*. Cabe de sobra (~5 GB de GPU durante el entrenamiento) y 10 minutos dan una AP de 0,331 en validación. Al detectar se usa la imagen completa a 1280, así que las frutas tienen el mismo tamaño en píxeles que al entrenar.
+- **Otro problema que apareció:** con los 8 *workers* por defecto, algunos procesos fallaban en Windows al cargar las DLL de PyTorch (`WinError 1114`) y el entrenamiento se quedaba colgado sin avanzar. Con `--workers 2` funciona.

@@ -195,24 +195,27 @@ El orden está pensado para tener **cuanto antes una versión completa que funci
 
 ### Fase 3. Primera versión completa
 
-> **Estado:** el código está escrito (`src/train.py`, `src/detector.py` y `main.py`), pero todavía no hemos conseguido entrenar: a 1280 px el entrenamiento no cabe en la memoria de la GPU. Las pruebas hechas, la causa y lo que hay que probar están en D12 ([DUDAS.md](DUDAS.md)).
+> **Estado:** ✅ primera versión completa funcionando de principio a fin: **AP = 0,331 en validación** (sección 8).
 >
 > Comandos (desde la raíz del repositorio):
 > ```
-> .venv\Scripts\python.exe team_G17\src\train.py --data datasets\fruits_yolo\data.yaml --name <nombre> --model yolo11s-seg.pt --batch 2 --epochs 1
-> .venv\Scripts\python.exe team_G17\main.py detect --input data\fruits_part1\train --output predictions.json --device cuda
+> .venv\Scripts\python.exe team_G17\src\prepare_dataset.py --data data\fruits_part1\train --out datasets\fruits_yolo_crop640 --crop 640
+> .venv\Scripts\python.exe team_G17\src\train.py --data datasets\fruits_yolo_crop640\data.yaml --name y11s_crop640 --model yolo11s-seg.pt --imgsz 640 --batch 8 --time 0.16 --workers 2 --save-to team_G17\weights\fruits.pt
+> cd team_G17
+> ..\.venv\Scripts\python.exe main.py detect --input ..\data\fruits_part1\train --output ..\predictions.json --device cuda
+> cd ..
 > .venv\Scripts\python.exe starter_kit\evaluate.py --gt data\fruits_part1\train\annotations.json --pred predictions.json --images-file datasets\fruits_yolo\val_ids.txt
 > ```
-> `main.py` carga el modelo de `team_G17/weights/fruits.pt`: hay que copiarlo ahí desde `runs/<nombre>/weights/best.pt` (o entrenar con `--save-to team_G17\weights\fruits.pt`).
 
-8. Entrenar YOLO-seg con fine-tuning a `imgsz=1280` en la RTX 3060. **Ojo con dos opciones de Ultralytics** que por defecto perjudican a las frutas pequeñas: al entrenar, las máscaras se reducen a 1/4 de resolución (`mask_ratio=4`), y al predecir se devuelven máscaras de baja resolución reescaladas (`retina_masks=False`). Hay que probar `mask_ratio` más bajo y `retina_masks=True`.
-9. Escribir `main.py detect`: inferencia → máscaras → RLE → JSON en formato COCO.
-10. Puntuar la validación con `evaluate.py` y anotar el resultado en la sección 8.
-11. Medir el tiempo por imagen y la memoria de GPU, y pasar `check_submission.py`.
+8. ✅ Entrenar YOLO-seg con fine-tuning en la RTX 3060. A 1280 px no cabía en memoria (D12), así que **entrenamos con recortes de 640×640 de las imágenes a su resolución original** y detectamos sobre la imagen completa a 1280 (sección 7). **Ojo con dos opciones de Ultralytics** que por defecto perjudican a las frutas pequeñas: al entrenar, las máscaras se reducen a 1/4 de resolución (`mask_ratio=4`), y al predecir se devuelven máscaras de baja resolución reescaladas (`retina_masks=False`). Hay que probar `mask_ratio` más bajo y `retina_masks=True`.
+9. ✅ Escribir `main.py detect`: inferencia → máscaras → RLE → JSON en formato COCO.
+10. ✅ Puntuar la validación con `evaluate.py` y anotar el resultado en la sección 8.
+11. Medir el tiempo por imagen y la memoria de GPU (✅ hecho: 1,14 s por imagen y 1,6 GB de GPU como máximo), y pasar `check_submission.py` (pendiente: falta el `requirements.txt` de la entrega).
 
 ### Fase 4. Mejoras (cada una se mide en validación antes de quedárnosla)
-- Votación de la especie por imagen (D1).
-- Ajustar el tamaño del modelo, el número de épocas y el umbral de confianza.
+- ~~Votación de la especie por imagen (D1).~~ Probada: no cambia nada, porque el modelo ya acierta la especie en el 100 % de las detecciones (accuracy 1,000).
+- **Prioridad: las frutas pequeñas** (AP_small 0,25 frente a 0,83 en las medianas). Probar a entrenar más tiempo (solo fueron 10 minutos), un modelo más grande (`yolo11m-seg`) y recortes más pequeños o con más solapamiento.
+- Ajustar el número de épocas y el umbral de confianza.
 - Si la resolución completa no basta para las frutas pequeñas: partir la imagen en trozos solapados (D5).
 - Probar a refinar las máscaras con SAM, si el tiempo lo permite.
 - Reentrenar con las 200 imágenes para el modelo final, con los ajustes elegidos.
@@ -229,14 +232,16 @@ Cada decisión indica de qué duda sale (ver [DUDAS.md](DUDAS.md)) y por qué la
 
 | Decisión | Por qué | Duda |
 |---|---|---|
-| **Modelo: YOLO de segmentación** (Ultralytics, variantes `-seg`) con fine-tuning desde pesos preentrenados | Es el mismo flujo que la práctica 7.5, pero devuelve una máscara por fruta. Plan B: Mask R-CNN (torchvision). | D4 |
-| **Resolución: imagen a tamaño real** (`imgsz=1280`) | Con 640 px la fruta mediana (13×13) se quedaría en unos 6×6. Partir la imagen en trozos solo si esto no basta. | D5 |
+| **Modelo: YOLO11s-seg** (Ultralytics) con fine-tuning desde pesos preentrenados en COCO | Es el mismo flujo que la práctica 7.5, pero devuelve una máscara por fruta. Empezamos con YOLO26-seg (la familia de la práctica), pero su entrenamiento calcula muchísimas máscaras por fruta y no cabe en memoria con tantas frutas por imagen (D12); YOLO11-seg no tiene ese problema. | D4, D12 |
+| **Resolución nativa: entrenar con recortes de 640×640 y detectar sobre la imagen completa a 1280** | Con la imagen reducida a 640 la fruta mediana (13×13) se quedaría en unos 6×6. Entrenar con la imagen completa a 1280 no cabe en memoria (D12). Con recortes sin reducir, las frutas tienen en el entrenamiento el mismo tamaño en píxeles que al detectar, y cada recorte tiene una cuarta parte de las frutas. YOLO acepta cualquier tamaño de entrada, así que al detectar se usa la imagen entera. | D5, D12 |
 | **Conversión de máscaras: propia** (`src/prepare_dataset.py`), basada en la de Ultralytics | `convert_coco` truncaba las coordenadas y desplazaba las máscaras un píxel (IoU medio 0,766). La nuestra hace lo mismo, pero con las coordenadas desplazadas medio píxel, y llega a un IoU medio de 0,928 (0,995 en frutas de un trozo). | D6 |
 | **Los fragmentos `iscrowd` se incluyen en el entrenamiento como frutas** | La evaluación ignora las detecciones sobre ellos (ni suman ni restan), así que detectarlos no penaliza. En cambio, si los dejamos fuera, sus píxeles cuentan como fondo y el modelo aprende que una fruta muy pequeña "no es fruta", justo lo contrario de lo que queremos para las de 20-30 px, que sí puntúan. Nuestra conversión los incluye (`convert_coco` se los saltaba). | D6 |
 | **Validación: 80/20 por árbol** (10 imágenes de cada árbol) | Las cuatro especies igual de representadas. No se puede separar por árboles (solo hay uno por especie), así que la validación saldrá optimista. | D3, D7 |
-| **Especie: una por imagen**, aplicada por votación si mejora la AP en validación | Cada árbol es de una sola especie. | D1 |
+| **Especie: sin votación** (la opción `--species-vote` queda disponible) | Cada árbol es de una sola especie, pero el modelo ya acierta la especie en el 100 % de las detecciones de validación: la votación da exactamente la misma AP. | D1 |
 | **Entrenamiento en local**, RTX 3060 de 12 GB (plan B: Google Colab) | Sin límites de tiempo ni desconexiones. La GPU de evaluación tiene 6 GB, así que hay que vigilar la memoria de la inferencia. | D8 |
-| **Presupuesto de tiempo: ~6 s por imagen**, con margen | Referencia de `check_submission.py`: test de 200 imágenes en 20 minutos, incluida la carga del modelo. | D2 |
+| **Presupuesto de tiempo: ~6 s por imagen**, con margen | Referencia de `check_submission.py`: test de 200 imágenes en 20 minutos, incluida la carga del modelo. Ahora gastamos 1,14 s por imagen en la RTX 3060. | D2 |
+| **Inferencia: `conf=0.001`, hasta 300 detecciones, máscaras a resolución completa (`retina_masks=True`), media precisión en GPU** | La AP premia devolver muchas detecciones ordenadas por confianza, y la evaluación tiene en cuenta hasta 300 por imagen. Las máscaras a resolución completa son imprescindibles con frutas tan pequeñas. | D5 |
+| **Entrenamiento con 2 *workers*** | En Windows, con los 8 por defecto, algunos procesos fallaban al cargar las DLL de PyTorch (`WinError 1114`) y el entrenamiento se quedaba colgado. | D12 |
 
 ## 8. Resultados
 
@@ -261,9 +266,27 @@ Detector por umbral de color (HSV), sin aprendizaje. Al no entrenarse, se puntú
 - Es la nota que hay que superar con claridad: prácticamente 0.
 - Confirma lo que esperábamos del análisis: el umbral de color **no encuentra ninguna pera** (AP 0, porque son verdes como las hojas), acierta la especie solo el 39 % de las veces y falla sobre todo en las frutas pequeñas (AP_small 0,0026 frente a AP_large 0,10).
 
-### Nuestro método
+### Nuestro método: versión 1 (YOLO11s-seg, recortes de 640, 10 minutos de entrenamiento)
 
-_Pendiente: métricas sobre las 40 imágenes de validación._
+Entrenado con las 160 imágenes de train (640 recortes de 640×640) durante 10 minutos (34 épocas) en la RTX 3060. Puntuado con `evaluate.py` sobre las **40 imágenes de validación**, a imagen completa:
+
+| Métrica | Valor |
+|---|---|
+| **AP** (principal) | **0,331** |
+| AP50 / AP75 | 0,605 / 0,304 |
+| AP naranja / manzana / pera / limón | 0,308 / 0,442 / 0,263 / 0,313 |
+| AP_agnostic | 0,338 |
+| accuracy (especie) | **1,000** |
+| AP_small / AP_medium / AP_large | **0,254** / 0,825 / 0,953 |
+| Detecciones / frutas | 11.846 / 2.315 |
+
+Ejecución completa de `main.py detect` sobre 200 imágenes en la RTX 3060: **229 s (1,14 s por imagen, incluida la carga del modelo)**. Pico de memoria de GPU: 1,6 GB (límite de la máquina de evaluación: 6 GB).
+
+**Qué nos dice:**
+- Pasamos de 0,0065 a 0,331: el método funciona.
+- **La especie no es un problema**: el 100 % de las detecciones que encuentran una fruta aciertan su especie, y la AP sin tener en cuenta la especie (0,338) es casi igual que la AP. Por eso la votación por imagen no cambia nada.
+- **El problema son las frutas pequeñas**: AP 0,25 en las *small*, frente a 0,83 en las *medium* y 0,95 en las *large*. Como el 87,5 % de las frutas son pequeñas, ahí está casi todo el margen de mejora.
+- Recordatorio: la validación es de los mismos árboles que el entrenamiento, así que en el test saldrá algo más bajo (D3).
 
 ## 9. Modelos, datos y librerías externas
 
@@ -272,7 +295,7 @@ El enunciado obliga a citar cada modelo preentrenado, dataset externo o librerí
 | Recurso | Para qué | Enlace |
 |---|---|---|
 | Ultralytics | Entrenar e inferir con YOLO de segmentación | https://github.com/ultralytics/ultralytics |
-| Pesos preentrenados de YOLO-seg (COCO) | Punto de partida del fine-tuning. El tamaño concreto del modelo está por decidir | https://docs.ultralytics.com/tasks/segment/ |
+| Pesos preentrenados `yolo11s-seg.pt` (COCO) | Punto de partida del fine-tuning | https://docs.ultralytics.com/models/yolo11/ |
 | pycocotools | Leer las anotaciones y codificar las máscaras en RLE | https://github.com/cocodataset/cocoapi |
 
 No usamos datasets externos.

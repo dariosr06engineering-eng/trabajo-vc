@@ -14,6 +14,8 @@ Opciones principales:
     --batch       imágenes por iteración (4)
     --mask-ratio  reducción de las máscaras al entrenar (Ultralytics usa 4 por defecto)
     --mosaic      probabilidad de usar mosaic (juntar 4 imágenes en una). 1.0 por defecto
+    --time        horas de entrenamiento; si se da, manda sobre --epochs (Ultralytics ajusta las épocas)
+    --workers     procesos que cargan las imágenes (2). En Windows, con 8 algunos fallan al cargar las DLL de PyTorch
 """
 
 import argparse
@@ -35,6 +37,8 @@ def main():
     p.add_argument("--batch", type=int, default=4)
     p.add_argument("--mask-ratio", type=int, default=4)
     p.add_argument("--mosaic", type=float, default=1.0)
+    p.add_argument("--time", type=float, help="horas de entrenamiento (manda sobre --epochs)")
+    p.add_argument("--workers", type=int, default=2)
     p.add_argument("--device", default="0", help="GPU a usar (0) o cpu")
     p.add_argument("--save-to", type=Path, help="copiar aquí el mejor modelo al terminar")
     args = p.parse_args()
@@ -47,6 +51,8 @@ def main():
         batch=args.batch,
         mask_ratio=args.mask_ratio,
         mosaic=args.mosaic,
+        time=args.time,
+        workers=args.workers,
         device=args.device,
         project=str(ROOT / "runs"),
         name=args.name,

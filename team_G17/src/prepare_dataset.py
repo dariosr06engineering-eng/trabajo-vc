@@ -75,21 +75,74 @@ def split_train_val(trees, val_per_tree, seed):
     return sorted(train), sorted(val)
 
 
-def annotation_to_polygon(ann, h, w):
-    """Polígono YOLO (lista x1 y1 x2 y2 ... normalizada) de una anotación con la máscara en RLE."""
-    mask = mask_utils.decode(ann["segmentation"])
+def mask_to_polygon(mask):
+    """Polígono YOLO (lista x1 y1 x2 y2 ... normalizada) de una máscara binaria (alto, ancho) de uint8."""
+    h, w = mask.shape
     contours = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)[0]
     polygons = [c.reshape(-1).tolist() for c in contours if len(c) >= 3]   # YOLO necesita al menos 3 puntos
     if not polygons:
         # Fragmento diminuto (1-2 píxeles en línea): se usa el rectángulo de sus píxeles
-        x, y, bw, bh = ann["bbox"]
-        pts = np.array([[x, y], [x + bw - 1, y], [x + bw - 1, y + bh - 1], [x, y + bh - 1]], dtype=np.float64)
+        ys, xs = np.nonzero(mask)
+        x0, x1, y0, y1 = xs.min(), xs.max(), ys.min(), ys.max()
+        pts = np.array([[x0, y0], [x1, y0], [x1, y1], [x0, y1]], dtype=np.float64)
     elif len(polygons) > 1:
         pts = np.concatenate(merge_multi_segment(polygons), axis=0).astype(np.float64)
     else:
         pts = np.array(polygons[0], dtype=np.float64).reshape(-1, 2)
     pts = (pts + 0.5) / [w, h]       # +0.5: ver el punto 3 de la explicación del principio
     return np.clip(pts, 0.0, 1.0).reshape(-1).tolist()
+
+
+def annotation_to_polygon(ann, h, w):
+    """Polígono YOLO de una anotación con la máscara en RLE."""
+    return mask_to_polygon(mask_utils.decode(ann["segmentation"]))
+
+
+def label_line(category_id, poly):
+    return " ".join([str(category_id - 1)] + [f"{v:.6f}" for v in poly])   # clases de YOLO: 0..3
+
+
+def crop_positions(size, crop):
+    """Posiciones de inicio de los recortes para cubrir `size` píxeles con recortes de `crop` (solapados si hace falta)."""
+    if size <= crop:
+        return [0]
+    n = -(-size // crop)                       # techo de size / crop
+    return [round(i * (size - crop) / (n - 1)) for i in range(n)]
+
+
+def write_crops(coco, ids, data_dir, out, name, crop, include_crowd):
+    """Recorta cada imagen en ventanas de crop x crop SIN reducirla (a resolución nativa) y escribe imagen y etiquetas
+    de cada recorte. Para 1280x960 y crop = 640 salen 4 recortes: x en {0, 640} e y en {0, 320}."""
+    img_dir, lbl_dir = out / "images" / name, out / "labels" / name
+    img_dir.mkdir(parents=True, exist_ok=True)
+    lbl_dir.mkdir(parents=True, exist_ok=True)
+    anns_of = defaultdict(list)
+    for a in coco["annotations"]:
+        anns_of[a["image_id"]].append(a)
+    images = {im["id"]: im for im in coco["images"]}
+    n_crops = n_objs = 0
+    for i in ids:
+        im = images[i]
+        img = cv2.imread(str(data_dir / "images" / im["file_name"]))
+        masks = [(a["category_id"], a["bbox"], mask_utils.decode(a["segmentation"]))
+                 for a in anns_of[i] if include_crowd or not a["iscrowd"]]
+        stem = Path(im["file_name"]).stem
+        for y0 in crop_positions(im["height"], crop):
+            for x0 in crop_positions(im["width"], crop):
+                lines = []
+                for cat, (bx, by, bw, bh), m in masks:
+                    if bx >= x0 + crop or by >= y0 + crop or bx + bw <= x0 or by + bh <= y0:
+                        continue                # la fruta no cae en este recorte
+                    mc = np.ascontiguousarray(m[y0:y0 + crop, x0:x0 + crop])
+                    if mc.any():
+                        lines.append(label_line(cat, mask_to_polygon(mc)))
+                cname = f"{stem}_x{x0}_y{y0}"
+                cv2.imwrite(str(img_dir / f"{cname}.jpg"), img[y0:y0 + crop, x0:x0 + crop],
+                            [cv2.IMWRITE_JPEG_QUALITY, 95])
+                (lbl_dir / f"{cname}.txt").write_text("\n".join(lines) + "\n")
+                n_crops += 1
+                n_objs += len(lines)
+    return n_crops, n_objs
 
 
 def write_labels(coco, ids, labels_dir, include_crowd):
@@ -106,8 +159,7 @@ def write_labels(coco, ids, labels_dir, include_crowd):
         for a in anns_of[i]:
             if a["iscrowd"] and not include_crowd:
                 continue
-            poly = annotation_to_polygon(a, im["height"], im["width"])
-            lines.append(" ".join([str(a["category_id"] - 1)] + [f"{v:.6f}" for v in poly]))
+            lines.append(label_line(a["category_id"], annotation_to_polygon(a, im["height"], im["width"])))
         (labels_dir / f"{Path(im['file_name']).stem}.txt").write_text("\n".join(lines) + "\n")
         n += len(lines)
     return n
@@ -121,6 +173,8 @@ def main():
     p.add_argument("--seed", type=int, default=0, help="semilla de la separación train/val (0)")
     p.add_argument("--no-crowd", action="store_true", help="no usar los fragmentos iscrowd para entrenar")
     p.add_argument("--overwrite", action="store_true", help="borrar --out si ya existe")
+    p.add_argument("--crop", type=int, default=0,
+                   help="si es > 0, guardar recortes de crop x crop a resolución nativa en vez de imágenes completas")
     args = p.parse_args()
 
     coco = json.loads((args.data / "annotations.json").read_text(encoding="utf-8"))
@@ -135,16 +189,18 @@ def main():
             raise SystemExit(f"{args.out} ya existe: usa --overwrite para rehacerlo")
         shutil.rmtree(args.out)
 
-    for name, ids in (("train", train_ids), ("val", val_ids)):
-        n = write_labels(coco, ids, args.out / "labels" / name, include_crowd=not args.no_crowd)
-        print(f"{name}: {n} frutas convertidas")
-
     file_of = {im["id"]: im["file_name"] for im in coco["images"]}
     for name, ids in (("train", train_ids), ("val", val_ids)):
-        dst = args.out / "images" / name
-        dst.mkdir(parents=True, exist_ok=True)
-        for i in ids:
-            shutil.copy2(args.data / "images" / file_of[i], dst / file_of[i])
+        if args.crop:
+            n_crops, n = write_crops(coco, ids, args.data, args.out, name, args.crop, include_crowd=not args.no_crowd)
+            print(f"{name}: {n_crops} recortes de {args.crop}x{args.crop}, {n} frutas")
+        else:
+            n = write_labels(coco, ids, args.out / "labels" / name, include_crowd=not args.no_crowd)
+            dst = args.out / "images" / name
+            dst.mkdir(parents=True, exist_ok=True)
+            for i in ids:
+                shutil.copy2(args.data / "images" / file_of[i], dst / file_of[i])
+            print(f"{name}: {n} frutas convertidas")
         (args.out / f"{name}_ids.txt").write_text("\n".join(map(str, ids)) + "\n")
 
     # Las clases de YOLO empiezan en 0: category_id 1..4 -> 0..3

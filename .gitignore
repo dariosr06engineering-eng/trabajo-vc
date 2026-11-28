@@ -16,3 +16,6 @@ predictions*.json
 # Pesos preentrenados que descarga Ultralytics en la raíz (los nuestros van en team_G17/weights/)
 /*.pt
 *.log
+
+# Modelos entrenados: de momento no se suben a git (se pueden regenerar con src/train.py)
+team_G17/weights/*.pt
